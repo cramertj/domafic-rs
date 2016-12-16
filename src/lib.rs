@@ -1,13 +1,16 @@
 trait DOMNode {
     type ChildrenType: DOMChildren;
+    fn children(&self) -> &Self::ChildrenType;
 }
 impl<'a, T: DOMNode> DOMNode for &'a T {
     type ChildrenType = T::ChildrenType;
+    fn children(&self) -> &Self::ChildrenType { (*self).children() }
 }
 
 struct Div<C: DOMChildren>(C);
 impl<C: DOMChildren> DOMNode for Div<C> {
     type ChildrenType = C;
+    fn children(&self) -> &Self::ChildrenType { &self.0 }
 }
 
 /// Processor that can fold over all the children of a `DOMNode`
@@ -114,15 +117,19 @@ tuple_impls!(
 mod tests {
     use super::*;
 
+    static NONE: () = ();
+
     #[derive(Copy, Clone)]
     struct BogusOne;
     impl DOMNode for BogusOne {
         type ChildrenType = ();
+        fn children(&self) -> &Self::ChildrenType { &NONE }
     }
 
     struct BogusTwo;
     impl DOMNode for BogusTwo {
         type ChildrenType = ();
+        fn children(&self) -> &Self::ChildrenType { &NONE }
     }
 
     struct ChildCounter;
