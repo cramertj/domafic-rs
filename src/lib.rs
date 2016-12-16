@@ -10,17 +10,53 @@ impl<T: DOMNode> DOMLevel for T {
     type ChildrenType = ();
 }
 
+/// Processor that can fold over all the members of a `DOMLevel`
 trait DOMChildrenProcessor {
-    type State;
-    fn get_processor<T: DOMLevel>() -> fn(&mut Self::State, &T) -> ();
+    /// Accumulator
+    type Acc;
+
+    /// Folding function
+    fn get_processor<T: DOMChildren>() -> fn(&mut Self::Acc, &T) -> ();
 }
 
 trait DOMChildren {
-    fn process_all<P: DOMChildrenProcessor>(&self, processor: &mut P::State) -> ();
+    fn process_all<P: DOMChildrenProcessor>(&self, acc: &mut P::Acc) -> ();
 }
+
 impl DOMChildren for () {
-    fn process_all<P: DOMChildrenProcessor>(&self, _processor: &mut P::State) -> () {}
+    fn process_all<P: DOMChildrenProcessor>(&self, _acc: &mut P::Acc) -> () {}
 }
+
+impl<T: DOMLevel> DOMChildren for T {
+    fn process_all<P: DOMChildrenProcessor>(&self, acc: &mut P::Acc) -> () {
+        P::get_processor()(acc, self);
+    }
+}
+
+impl<T: DOMChildren> DOMChildren for [T] {
+    fn process_all<P: DOMChildrenProcessor>(&self, acc: &mut P::Acc) -> () {
+        for x in self {
+            x.process_all::<P>(acc);
+        }
+    }
+}
+
+macro_rules! array_impls {
+    ($($len:expr,)*) => { $(
+        impl<T: DOMChildren> DOMChildren for [T; $len] {
+            fn process_all<P: DOMChildrenProcessor>(&self, acc: &mut P::Acc) -> () {
+                for x in self {
+                    x.process_all::<P>(acc);
+                }
+            }
+        }
+    )* }
+}
+
+array_impls!(
+    0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
+    17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31,
+);
 
 // Credit to @shepmaster for structure of recursive tuple macro
 macro_rules! tuple_impls {
@@ -47,14 +83,14 @@ macro_rules! tuple_impls {
     // Finally expand into the implementation
     ([($idx:tt, $typ:ident); $( ($nidx:tt, $ntyp:ident); )*]) => {
         impl<$typ, $( $ntyp ),*> DOMChildren for ($typ, $( $ntyp ),*)
-            where $typ: DOMLevel + Copy,
-                  $( $ntyp: DOMLevel + Copy ),*
+            where $typ: DOMChildren + Copy,
+                  $( $ntyp: DOMChildren + Copy ),*
         {
-            fn process_all<P>(&self, state: &mut P::State) -> ()
+            fn process_all<P>(&self, acc: &mut P::Acc) -> ()
                     where P: DOMChildrenProcessor {
-                P::get_processor()(state, &self.$idx);
+                &self.$idx.process_all::<P>(acc);
                 $(
-                    P::get_processor()(state, &self.$nidx);
+                    &self.$nidx.process_all::<P>(acc);
                 )*
             }
         }
@@ -87,10 +123,10 @@ mod tests {
 
     struct ChildCounter;
     impl DOMChildrenProcessor for ChildCounter {
-        type State = usize;
+        type Acc = usize;
 
-        fn get_processor<T: DOMLevel>() -> fn(&mut Self::State, &T) -> () {
-            fn incr<T: DOMLevel>(state: &mut usize, _level: &T) {
+        fn get_processor<T: DOMChildren>() -> fn(&mut Self::Acc, &T) -> () {
+            fn incr<T: DOMChildren>(state: &mut usize, _level: &T) {
                 *state += 1;
             }
             incr
@@ -102,5 +138,22 @@ mod tests {
         let mut count = 0;
         (BogusOne, &BogusOne, &BogusTwo).process_all::<ChildCounter>(&mut count);
         assert_eq!(3, count);
+
+        count = 0;
+        (BogusOne, (BogusOne,), BogusOne).process_all::<ChildCounter>(&mut count);
+        assert_eq!(3, count);
+
+        count = 0;
+        [BogusOne, BogusOne, BogusOne].process_all::<ChildCounter>(&mut count);
+        assert_eq!(3, count);
+
+        count = 0;
+        (BogusOne, BogusOne,
+            [BogusOne, BogusOne, BogusOne],
+            [(BogusOne)],
+            [(), (), ()],
+            [&BogusTwo, &BogusTwo, &BogusTwo],
+        ).process_all::<ChildCounter>(&mut count);
+        assert_eq!(9, count);
     }
 }
