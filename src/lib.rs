@@ -12,7 +12,7 @@ impl<T: DOMNode> DOMLevel for T {
 
 trait DOMChildrenProcessor {
     type State;
-    fn get_processor<T: DOMLevel>() -> fn(&mut Self::State, T) -> ();
+    fn get_processor<T: DOMLevel>() -> fn(&mut Self::State, &T) -> ();
 }
 
 trait DOMChildren {
@@ -20,12 +20,6 @@ trait DOMChildren {
 }
 impl DOMChildren for () {
     fn process_all<P: DOMChildrenProcessor>(&self, _processor: &mut P::State) -> () {}
-}
-
-impl<'a, T: DOMChildren> DOMChildren for &'a T {
-    fn process_all<P: DOMChildrenProcessor>(&self, processor: &mut P::State) -> () {
-        (*self).process_all::<P>(processor);
-    }
 }
 
 // Credit to @shepmaster for structure of recursive tuple macro
@@ -58,9 +52,9 @@ macro_rules! tuple_impls {
         {
             fn process_all<P>(&self, state: &mut P::State) -> ()
                     where P: DOMChildrenProcessor {
-                P::get_processor()(state, self.$idx);
+                P::get_processor()(state, &self.$idx);
                 $(
-                    P::get_processor()(state, self.$nidx);
+                    P::get_processor()(state, &self.$nidx);
                 )*
             }
         }
@@ -95,8 +89,8 @@ mod tests {
     impl DOMChildrenProcessor for ChildCounter {
         type State = usize;
 
-        fn get_processor<T: DOMLevel>() -> fn(&mut Self::State, T) -> () {
-            fn incr<T: DOMLevel>(state: &mut usize, _level: T) {
+        fn get_processor<T: DOMLevel>() -> fn(&mut Self::State, &T) -> () {
+            fn incr<T: DOMLevel>(state: &mut usize, _level: &T) {
                 *state += 1;
             }
             incr
