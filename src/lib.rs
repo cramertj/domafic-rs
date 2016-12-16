@@ -1,11 +1,13 @@
-// Temporary
-#![allow(dead_code)]
-
 trait DOMNode {}
+impl<'a, T: DOMNode> DOMNode for &'a T {}
 
 trait DOMLevel {
     type NodeType: DOMNode;
     type ChildrenType: DOMChildren;
+}
+impl<T: DOMNode> DOMLevel for T {
+    type NodeType = T;
+    type ChildrenType = ();
 }
 
 trait DOMChildrenProcessor {
@@ -13,21 +15,17 @@ trait DOMChildrenProcessor {
     fn get_processor<T: DOMLevel>() -> fn(&mut Self::State, T) -> ();
 }
 
-// Dummy type for testing
-struct ChildCounter;
-impl DOMChildrenProcessor for ChildCounter {
-    type State = usize;
-
-    fn get_processor<T: DOMLevel>() -> fn(&mut Self::State, T) -> () {
-        fn incr<T: DOMLevel>(state: &mut usize, _level: T) {
-            *state += 1;
-        }
-        incr
-    }
-}
-
 trait DOMChildren {
     fn process_all<P: DOMChildrenProcessor>(&self, processor: &mut P::State) -> ();
+}
+impl DOMChildren for () {
+    fn process_all<P: DOMChildrenProcessor>(&self, _processor: &mut P::State) -> () {}
+}
+
+impl<'a, T: DOMChildren> DOMChildren for &'a T {
+    fn process_all<P: DOMChildrenProcessor>(&self, processor: &mut P::State) -> () {
+        (*self).process_all::<P>(processor);
+    }
 }
 
 // Credit to @shepmaster for structure of recursive tuple macro
@@ -84,7 +82,31 @@ tuple_impls!(
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
+    #[derive(Copy, Clone)]
+    struct BogusOne;
+    impl DOMNode for BogusOne {}
+
+    struct BogusTwo;
+    impl DOMNode for BogusTwo {}
+
+    struct ChildCounter;
+    impl DOMChildrenProcessor for ChildCounter {
+        type State = usize;
+
+        fn get_processor<T: DOMLevel>() -> fn(&mut Self::State, T) -> () {
+            fn incr<T: DOMLevel>(state: &mut usize, _level: T) {
+                *state += 1;
+            }
+            incr
+        }
+    }
+
     #[test]
-    fn it_works() {
+    fn counts_children() {
+        let mut count = 0;
+        (BogusOne, &BogusOne, &BogusTwo).process_all::<ChildCounter>(&mut count);
+        assert_eq!(3, count);
     }
 }
