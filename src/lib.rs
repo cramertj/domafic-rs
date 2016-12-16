@@ -1,16 +1,16 @@
-trait DOMNode {}
-impl<'a, T: DOMNode> DOMNode for &'a T {}
-
-trait DOMLevel {
-    type NodeType: DOMNode;
+trait DOMNode {
     type ChildrenType: DOMChildren;
 }
-impl<T: DOMNode> DOMLevel for T {
-    type NodeType = T;
-    type ChildrenType = ();
+impl<'a, T: DOMNode> DOMNode for &'a T {
+    type ChildrenType = T::ChildrenType;
 }
 
-/// Processor that can fold over all the members of a `DOMLevel`
+struct Div<C: DOMChildren>(C);
+impl<C: DOMChildren> DOMNode for Div<C> {
+    type ChildrenType = C;
+}
+
+/// Processor that can fold over all the children of a `DOMNode`
 trait DOMChildrenProcessor {
     /// Accumulator
     type Acc;
@@ -27,7 +27,7 @@ impl DOMChildren for () {
     fn process_all<P: DOMChildrenProcessor>(&self, _acc: &mut P::Acc) -> () {}
 }
 
-impl<T: DOMLevel> DOMChildren for T {
+impl<T: DOMNode> DOMChildren for T {
     fn process_all<P: DOMChildrenProcessor>(&self, acc: &mut P::Acc) -> () {
         P::get_processor()(acc, self);
     }
@@ -116,10 +116,14 @@ mod tests {
 
     #[derive(Copy, Clone)]
     struct BogusOne;
-    impl DOMNode for BogusOne {}
+    impl DOMNode for BogusOne {
+        type ChildrenType = ();
+    }
 
     struct BogusTwo;
-    impl DOMNode for BogusTwo {}
+    impl DOMNode for BogusTwo {
+        type ChildrenType = ();
+    }
 
     struct ChildCounter;
     impl DOMChildrenProcessor for ChildCounter {
