@@ -1,5 +1,7 @@
+
+#![feature(conservative_impl_trait)]
+
 pub trait DOMNode: Sized {
-    type ChildrenType: DOMChildren;
     fn get_attribute(&self, _index: usize) -> Option<&KeyValue> { None }
     fn attributes<'a>(&'a self) -> AttributeIter<'a, Self> {
         AttributeIter { node: self, index: 0 }
@@ -7,7 +9,7 @@ pub trait DOMNode: Sized {
     fn with_attributes<A: AsRef<[KeyValue]>>(self, attrs: A) -> WithAttributes<Self, A> {
         WithAttributes { node: self, attributes: attrs }
     }
-    fn children(&self) -> &Self::ChildrenType;
+    fn process_children<P: DOMNodeProcessor>(&self, acc: &mut P::Acc) -> () where Self: Sized;
     fn value<'a>(&'a self) -> DOMValue<'a>;
 }
 
@@ -24,14 +26,13 @@ pub struct WithAttributes<T: DOMNode, A: AsRef<[KeyValue]>> {
 }
 
 impl<T, A> DOMNode for WithAttributes<T, A> where T: DOMNode, A: AsRef<[KeyValue]> {
-    type ChildrenType = T::ChildrenType;
     fn get_attribute(&self, index: usize) -> Option<&KeyValue> {
         let attributes = self.attributes.as_ref();
         attributes
             .get(index)
             .or_else(|| self.node.get_attribute(index - attributes.len()))
     }
-    fn children(&self) -> &Self::ChildrenType { self.node.children() }
+    fn process_children<P: DOMNodeProcessor>(&self, _acc: &mut P::Acc) -> () {}
     fn value<'a>(&'a self) -> DOMValue<'a> { self.node.value() }
 }
 
@@ -50,48 +51,97 @@ impl<'a, T: DOMNode> Iterator for AttributeIter<'a, T> {
 }
 
 impl<'a, T: DOMNode> DOMNode for &'a T {
-    type ChildrenType = T::ChildrenType;
-    fn children(&self) -> &Self::ChildrenType { (*self).children() }
+    fn process_children<P: DOMNodeProcessor>(&self, acc: &mut P::Acc) -> () {
+        (*self).process_children::<P>(acc);
+    }
     fn value<'b>(&'b self) -> DOMValue<'b> { (*self).value() }
 }
 
-const NONE_REF: &'static () = &();
-
 impl DOMNode for String {
-    type ChildrenType = ();
-    fn children(&self) -> &Self::ChildrenType { NONE_REF }
+    fn process_children<P: DOMNodeProcessor>(&self, _acc: &mut P::Acc) -> () {}
     fn value<'a>(&'a self) -> DOMValue<'a> { DOMValue::Text(self) }
 }
 
-impl<'a> DOMNode for &'a str {
-    type ChildrenType = ();
-    fn children(&self) -> &Self::ChildrenType { NONE_REF }
-    fn value<'b>(&'b self) -> DOMValue<'b> { DOMValue::Text(self) }
+impl DOMNode for &'static str {
+    fn process_children<P: DOMNodeProcessor>(&self, _acc: &mut P::Acc) -> () {}
+    fn value<'a>(&'a self) -> DOMValue<'a> { DOMValue::Text(self) }
 }
 
 pub mod tags {
-    use super::{DOMNode, DOMChildren, DOMValue};
+    use super::{DOMNode, DOMNodeProcessor, DOMNodes, DOMValue, KeyValue};
+
+    pub trait TagProperties {
+        type Children: DOMNodes;
+        type Attributes: AsRef<[KeyValue]>;
+        fn properties(self) -> (Self::Children, Self::Attributes);
+    }
+
+    impl<C: DOMNodes> TagProperties for C {
+        type Children = Self;
+        type Attributes = [KeyValue; 0];
+        fn properties(self) -> (Self::Children, Self::Attributes) {
+            (
+                self,
+                [],
+            )
+        }
+    }
+
+    pub struct Attrs<A: AsRef<[KeyValue]>>(A);
+    impl<C: DOMNodes, A: AsRef<[KeyValue]>> TagProperties for (Attrs<A>, C) {
+        type Children = C;
+        type Attributes = A;
+        fn properties(self) -> (Self::Children, Self::Attributes) {
+            (
+                self.1,
+                (self.0).0,
+            )
+        }
+    }
+
+    pub struct Tag<C: DOMNodes, A: AsRef<[KeyValue]>> {
+        tagname: &'static str,
+        contents: C,
+        attributes: A,
+    }
+
+    impl<C: DOMNodes, A: AsRef<[KeyValue]>> DOMNode for Tag<C, A> {
+        fn get_attribute(&self, index: usize) -> Option<&KeyValue> {
+            self.attributes.as_ref().get(index)
+        }
+        fn process_children<P: DOMNodeProcessor>(&self, acc: &mut P::Acc) -> () {
+            self.contents.process_all::<P>(acc);
+        }
+        fn value<'a>(&'a self) -> DOMValue<'a> {
+            DOMValue::Element {
+                tag: self.tagname,
+            }
+        }
+    }
 
     macro_rules! impl_tags {
-        ($($tagname:ident,)*) => { $(
-            pub struct $tagname<C: DOMChildren>(pub C);
-            impl<C: DOMChildren> DOMNode for $tagname<C> {
-                type ChildrenType = C;
-                fn children(&self) -> &Self::ChildrenType { &self.0 }
-                fn value<'a>(&'a self) -> DOMValue<'a> {
-                    DOMValue::Element {
-                        tag: stringify!($tagname)
-                    }
+        ($($tagname:ident),*) => { $(
+            pub fn $tagname<T: TagProperties>(properties: T) -> Tag<T::Children, T::Attributes> {
+                let (contents, attributes) = properties.properties();
+                Tag {
+                    tagname: stringify!($tagname),
+                    contents: contents,
+                    attributes: attributes,
                 }
             }
         )* }
     }
 
     impl_tags!(
-        A, B, Big, BlockQuote, Body, Br, Center, Del, Div, Em,
-        Font, Head, H1, H2, H3, H4, H5, H6, HR, I, Img, Ins,
-        Li, Ol, P, Pre, S, Small, Span, Strong, Sub, Sup,
-        Table, TD, TH, Title, TR, TT, U, UL,
+        a, abbr, acronym, address, applet, area, article, aside, audio, b, base, basefont, bdi,
+        bdo, big, blockquote, body, br, button, canvas, caption, center, cite, code, col, colgroup,
+        datalist, dd, del, details, dfn, dialog, dir, div, dl, dt, em, embed, fieldset,
+        figcaption, figure, font, footer, form, frame, framset, h1, h2, h3, h4, h5, h6, head,
+        header, hr, i, iframe, img, input, ins, kbd, keygen, label, legend, li, link, main, map,
+        mark, menu, menuitem, meta, meter, nav, noframes, noscript, object, ol, optgroup, option,
+        output, p, param, pre, progress, q, rp, rt, ruby, s, samp, script, section, select, small,
+        source, span, strike, strong, style, sub, summary, sup, table, tbody, td, textarea, tfoot,
+        th, thead, time, title, tr, track, tt, u, ul, var, video, wbr
     );
 }
 
@@ -104,21 +154,21 @@ pub trait DOMNodeProcessor {
     fn get_processor<T: DOMNode>() -> fn(&mut Self::Acc, &T) -> ();
 }
 
-pub trait DOMChildren {
+pub trait DOMNodes {
     fn process_all<P: DOMNodeProcessor>(&self, acc: &mut P::Acc) -> ();
 }
 
-impl DOMChildren for () {
+impl DOMNodes for () {
     fn process_all<P: DOMNodeProcessor>(&self, _acc: &mut P::Acc) -> () {}
 }
 
-impl<T: DOMNode> DOMChildren for T {
+impl<T: DOMNode> DOMNodes for T {
     fn process_all<P: DOMNodeProcessor>(&self, acc: &mut P::Acc) -> () {
         P::get_processor()(acc, self);
     }
 }
 
-impl<T: DOMChildren> DOMChildren for [T] {
+impl<T: DOMNodes> DOMNodes for [T] {
     fn process_all<P: DOMNodeProcessor>(&self, acc: &mut P::Acc) -> () {
         for x in self {
             x.process_all::<P>(acc);
@@ -126,7 +176,7 @@ impl<T: DOMChildren> DOMChildren for [T] {
     }
 }
 
-impl<T: DOMChildren> DOMChildren for Vec<T> {
+impl<T: DOMNodes> DOMNodes for Vec<T> {
     fn process_all<P: DOMNodeProcessor>(&self, acc: &mut P::Acc) -> () {
         for x in self {
             x.process_all::<P>(acc);
@@ -136,7 +186,7 @@ impl<T: DOMChildren> DOMChildren for Vec<T> {
 
 macro_rules! array_impls {
     ($($len:expr,)*) => { $(
-        impl<T: DOMChildren> DOMChildren for [T; $len] {
+        impl<T: DOMNodes> DOMNodes for [T; $len] {
             fn process_all<P: DOMNodeProcessor>(&self, acc: &mut P::Acc) -> () {
                 for x in self {
                     x.process_all::<P>(acc);
@@ -175,9 +225,9 @@ macro_rules! tuple_impls {
 
     // Finally expand into the implementation
     ([($idx:tt, $typ:ident); $( ($nidx:tt, $ntyp:ident); )*]) => {
-        impl<$typ, $( $ntyp ),*> DOMChildren for ($typ, $( $ntyp ),*)
-            where $typ: DOMChildren,
-                  $( $ntyp: DOMChildren),*
+        impl<$typ, $( $ntyp ),*> DOMNodes for ($typ, $( $ntyp ),*)
+            where $typ: DOMNodes,
+                  $( $ntyp: DOMNodes),*
         {
             fn process_all<P>(&self, acc: &mut P::Acc) -> ()
                     where P: DOMNodeProcessor {
@@ -204,7 +254,7 @@ tuple_impls!(
 );
 
 pub mod html_string {
-    use super::{DOMNode, DOMChildren, DOMNodeProcessor, DOMValue};
+    use super::{DOMNode, DOMNodeProcessor, DOMValue};
 
     pub struct HtmlStringBuilder;
     impl DOMNodeProcessor for HtmlStringBuilder {
@@ -216,9 +266,16 @@ pub mod html_string {
                     DOMValue::Element { tag: tagname } => {
                         string.push_str("<");
                         string.push_str(tagname);
+                        for attr in node.attributes() {
+                            string.push_str(" ");
+                            string.push_str(attr.0);
+                            string.push_str("=\"");
+                            string.push_str(attr.1);
+                            string.push_str("\"")
+                        }
                         string.push_str(">");
 
-                        node.children().process_all::<HtmlStringBuilder>(string);
+                        node.process_children::<HtmlStringBuilder>(string);
 
                         string.push_str("</");
                         string.push_str(tagname);
@@ -243,8 +300,7 @@ mod tests {
 
     struct BogusOne;
     impl DOMNode for BogusOne {
-        type ChildrenType = ();
-        fn children(&self) -> &Self::ChildrenType { NONE_REF }
+        fn process_children<P: DOMNodeProcessor>(&self, _acc: &mut P::Acc) -> () {}
         fn value<'a>(&'a self) -> DOMValue<'a> {
             DOMValue::Element { tag: "bogus_tag_one" }
         }
@@ -252,8 +308,7 @@ mod tests {
 
     struct BogusTwo;
     impl DOMNode for BogusTwo {
-        type ChildrenType = ();
-        fn children(&self) -> &Self::ChildrenType { NONE_REF }
+        fn process_children<P: DOMNodeProcessor>(&self, _acc: &mut P::Acc) -> () {}
         fn value<'a>(&'a self) -> DOMValue<'a> {
             DOMValue::Element { tag: "bogus_tag_two" }
         }
@@ -271,20 +326,19 @@ mod tests {
         }
     }
 
-    static HTML_SAMPLE:
-        Div<(BogusOne, BogusOne, BogusTwo, Table<(&'static str, TH<()>, TR<()>, TR<()>)>)> =
-
-    Div ((
-        BogusOne,
-        BogusOne,
-        BogusTwo,
-        Table ((
-            "something",
-            TH (()),
-            TR (()),
-            TR (()),
-        )),
-    ));
+    fn html_sample() -> impl DOMNode {
+        div ((
+            BogusOne,
+            BogusOne,
+            BogusTwo,
+            table ((
+                "something",
+                th (()),
+                tr (()),
+                tr (()),
+            )),
+        ))
+    }
 
     #[test]
     fn counts_children() {
@@ -309,21 +363,21 @@ mod tests {
         ).process_all::<ChildCounter>(&mut count);
         assert_eq!(9, count);
 
+        let sample = html_sample();
+
         count = 0;
-        HTML_SAMPLE.process_all::<ChildCounter>(&mut count);
+        sample.process_all::<ChildCounter>(&mut count);
         assert_eq!(1, count);
 
-        let div_children = HTML_SAMPLE.children();
-
         count = 0;
-        div_children.process_all::<ChildCounter>(&mut count);
+        sample.process_children::<ChildCounter>(&mut count);
         assert_eq!(4, count);
     }
 
     #[test]
     fn builds_string() {
         let mut string = String::new();
-        HTML_SAMPLE.process_all::<HtmlStringBuilder>(&mut string);
+        html_sample().process_all::<HtmlStringBuilder>(&mut string);
         assert_eq!(
             r#"
             <div>
@@ -344,7 +398,7 @@ mod tests {
 
     #[test]
     fn builds_attribute_list() {
-        let div = (Div (()))
+        let div = div(())
             .with_attributes([("attr2", "key2"), ("attr3", "key3")])
             .with_attributes([("attr1", "key1")]);
 
