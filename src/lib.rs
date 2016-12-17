@@ -1,10 +1,12 @@
 pub trait DOMNode {
     type ChildrenType: DOMChildren;
     fn children(&self) -> &Self::ChildrenType;
+    fn tagname(&self) -> &str;
 }
 impl<'a, T: DOMNode> DOMNode for &'a T {
     type ChildrenType = T::ChildrenType;
     fn children(&self) -> &Self::ChildrenType { (*self).children() }
+    fn tagname(&self) -> &str { (*self).tagname() }
 }
 
 const NONE_REF: &'static () = &();
@@ -12,11 +14,13 @@ const NONE_REF: &'static () = &();
 impl DOMNode for String {
     type ChildrenType = ();
     fn children(&self) -> &Self::ChildrenType { NONE_REF }
+    fn tagname(&self) -> &str { "text_tag" }
 }
 
 impl<'a> DOMNode for &'a str {
     type ChildrenType = ();
     fn children(&self) -> &Self::ChildrenType { NONE_REF }
+    fn tagname(&self) -> &str { "text_tag" }
 }
 
 pub mod tags {
@@ -28,6 +32,7 @@ pub mod tags {
             impl<C: DOMChildren> DOMNode for $tagname<C> {
                 type ChildrenType = C;
                 fn children(&self) -> &Self::ChildrenType { &self.0 }
+                fn tagname(&self) -> &str { stringify!($tagname) }
             }
         )* }
     }
@@ -40,31 +45,31 @@ pub mod tags {
     );
 }
 
-/// Processor that can fold over all the children of a `DOMNode`
-pub trait DOMChildrenProcessor {
+/// Processor of a `DOMNode`
+pub trait DOMNodeProcessor {
     /// Accumulator
     type Acc;
 
     /// Folding function
-    fn get_processor<T: DOMChildren>() -> fn(&mut Self::Acc, &T) -> ();
+    fn get_processor<T: DOMNode>() -> fn(&mut Self::Acc, &T) -> ();
 }
 
 pub trait DOMChildren {
-    fn process_all<P: DOMChildrenProcessor>(&self, acc: &mut P::Acc) -> ();
+    fn process_all<P: DOMNodeProcessor>(&self, acc: &mut P::Acc) -> ();
 }
 
 impl DOMChildren for () {
-    fn process_all<P: DOMChildrenProcessor>(&self, _acc: &mut P::Acc) -> () {}
+    fn process_all<P: DOMNodeProcessor>(&self, _acc: &mut P::Acc) -> () {}
 }
 
 impl<T: DOMNode> DOMChildren for T {
-    fn process_all<P: DOMChildrenProcessor>(&self, acc: &mut P::Acc) -> () {
+    fn process_all<P: DOMNodeProcessor>(&self, acc: &mut P::Acc) -> () {
         P::get_processor()(acc, self);
     }
 }
 
 impl<T: DOMChildren> DOMChildren for [T] {
-    fn process_all<P: DOMChildrenProcessor>(&self, acc: &mut P::Acc) -> () {
+    fn process_all<P: DOMNodeProcessor>(&self, acc: &mut P::Acc) -> () {
         for x in self {
             x.process_all::<P>(acc);
         }
@@ -74,7 +79,7 @@ impl<T: DOMChildren> DOMChildren for [T] {
 macro_rules! array_impls {
     ($($len:expr,)*) => { $(
         impl<T: DOMChildren> DOMChildren for [T; $len] {
-            fn process_all<P: DOMChildrenProcessor>(&self, acc: &mut P::Acc) -> () {
+            fn process_all<P: DOMNodeProcessor>(&self, acc: &mut P::Acc) -> () {
                 for x in self {
                     x.process_all::<P>(acc);
                 }
@@ -117,7 +122,7 @@ macro_rules! tuple_impls {
                   $( $ntyp: DOMChildren),*
         {
             fn process_all<P>(&self, acc: &mut P::Acc) -> ()
-                    where P: DOMChildrenProcessor {
+                    where P: DOMNodeProcessor {
                 &self.$idx.process_all::<P>(acc);
                 $(
                     &self.$nidx.process_all::<P>(acc);
@@ -140,34 +145,76 @@ tuple_impls!(
     (0 => A),
 );
 
+pub mod html_string {
+    use super::{DOMNode, DOMChildren, DOMNodeProcessor};
+
+    pub struct HtmlStringBuilder;
+    impl DOMNodeProcessor for HtmlStringBuilder {
+        type Acc = String;
+
+        fn get_processor<T: DOMNode>() -> fn(&mut Self::Acc, &T) -> () {
+            fn add_node<T: DOMNode>(string: &mut String, node: &T) {
+                string.push_str("<");
+                string.push_str(node.tagname());
+                string.push_str(">");
+
+                node.children().process_all::<HtmlStringBuilder>(string);
+
+                string.push_str("</");
+                string.push_str(node.tagname());
+                string.push_str(">");
+            }
+            add_node
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use super::tags::*;
+    use super::html_string::*;
 
     struct BogusOne;
     impl DOMNode for BogusOne {
         type ChildrenType = ();
         fn children(&self) -> &Self::ChildrenType { NONE_REF }
+        fn tagname(&self) -> &str { "bogus_tag_one" }
     }
 
     struct BogusTwo;
     impl DOMNode for BogusTwo {
         type ChildrenType = ();
         fn children(&self) -> &Self::ChildrenType { NONE_REF }
+        fn tagname(&self) -> &str { "bogus_tag_two" }
     }
 
     struct ChildCounter;
-    impl DOMChildrenProcessor for ChildCounter {
+    impl DOMNodeProcessor for ChildCounter {
         type Acc = usize;
 
-        fn get_processor<T: DOMChildren>() -> fn(&mut Self::Acc, &T) -> () {
-            fn incr<T: DOMChildren>(state: &mut usize, _level: &T) {
-                *state += 1;
+        fn get_processor<T: DOMNode>() -> fn(&mut Self::Acc, &T) -> () {
+            fn incr<T: DOMNode>(count: &mut usize, _node: &T) {
+                *count += 1;
             }
             incr
         }
     }
+
+    static HTML_SAMPLE:
+        Div<(BogusOne, BogusOne, BogusTwo, Table<(&'static str, TH<()>, TR<()>, TR<()>)>)> =
+
+    Div ((
+        BogusOne,
+        BogusOne,
+        BogusTwo,
+        Table ((
+            "something",
+            TH (()),
+            TR (()),
+            TR (()),
+        )),
+    ));
 
     #[test]
     fn counts_children() {
@@ -192,27 +239,36 @@ mod tests {
         ).process_all::<ChildCounter>(&mut count);
         assert_eq!(9, count);
 
-        let div = Div ((
-            BogusOne,
-            BogusOne,
-            BogusTwo,
-            Table ((
-                "something",
-                "something else".to_string(),
-                TH (()),
-                TR (()),
-                TR (()),
-            )),
-        ));
-
         count = 0;
-        div.process_all::<ChildCounter>(&mut count);
+        HTML_SAMPLE.process_all::<ChildCounter>(&mut count);
         assert_eq!(1, count);
 
-        let div_children = div.children();
+        let div_children = HTML_SAMPLE.children();
 
         count = 0;
         div_children.process_all::<ChildCounter>(&mut count);
         assert_eq!(4, count);
+    }
+
+    #[test]
+    fn builds_string() {
+        let mut string = String::new();
+        HTML_SAMPLE.process_all::<HtmlStringBuilder>(&mut string);
+        assert_eq!(
+            r#"
+            <div>
+                <bogus_tag_one></bogus_tag_one>
+                <bogus_tag_one></bogus_tag_one>
+                <bogus_tag_two></bogus_tag_two>
+                <table>
+                    <text_tag></text_tag>
+                    <th></th>
+                    <tr></tr>
+                    <tr></tr>
+                </table>
+            </div>
+            "#.chars().filter(|c| !c.is_whitespace()).collect::<String>(),
+            string.to_lowercase()
+        );
     }
 }
