@@ -1,12 +1,17 @@
 pub trait DOMNode {
     type ChildrenType: DOMChildren;
     fn children(&self) -> &Self::ChildrenType;
-    fn tagname(&self) -> &str;
+    fn value<'a>(&'a self) -> DOMValue<'a>;
 }
+pub enum DOMValue<'a> {
+    Element { tag: &'a str },
+    Text(&'a str),
+}
+
 impl<'a, T: DOMNode> DOMNode for &'a T {
     type ChildrenType = T::ChildrenType;
     fn children(&self) -> &Self::ChildrenType { (*self).children() }
-    fn tagname(&self) -> &str { (*self).tagname() }
+    fn value<'b>(&'b self) -> DOMValue<'b> { (*self).value() }
 }
 
 const NONE_REF: &'static () = &();
@@ -14,17 +19,17 @@ const NONE_REF: &'static () = &();
 impl DOMNode for String {
     type ChildrenType = ();
     fn children(&self) -> &Self::ChildrenType { NONE_REF }
-    fn tagname(&self) -> &str { "text_tag" }
+    fn value<'a>(&'a self) -> DOMValue<'a> { DOMValue::Text(self) }
 }
 
 impl<'a> DOMNode for &'a str {
     type ChildrenType = ();
     fn children(&self) -> &Self::ChildrenType { NONE_REF }
-    fn tagname(&self) -> &str { "text_tag" }
+    fn value<'b>(&'b self) -> DOMValue<'b> { DOMValue::Text(self) }
 }
 
 pub mod tags {
-    use super::{DOMNode, DOMChildren};
+    use super::{DOMNode, DOMChildren, DOMValue};
 
     macro_rules! impl_tags {
         ($($tagname:ident,)*) => { $(
@@ -32,7 +37,11 @@ pub mod tags {
             impl<C: DOMChildren> DOMNode for $tagname<C> {
                 type ChildrenType = C;
                 fn children(&self) -> &Self::ChildrenType { &self.0 }
-                fn tagname(&self) -> &str { stringify!($tagname) }
+                fn value<'a>(&'a self) -> DOMValue<'a> {
+                    DOMValue::Element {
+                        tag: stringify!($tagname)
+                    }
+                }
             }
         )* }
     }
@@ -146,7 +155,7 @@ tuple_impls!(
 );
 
 pub mod html_string {
-    use super::{DOMNode, DOMChildren, DOMNodeProcessor};
+    use super::{DOMNode, DOMChildren, DOMNodeProcessor, DOMValue};
 
     pub struct HtmlStringBuilder;
     impl DOMNodeProcessor for HtmlStringBuilder {
@@ -154,15 +163,23 @@ pub mod html_string {
 
         fn get_processor<T: DOMNode>() -> fn(&mut Self::Acc, &T) -> () {
             fn add_node<T: DOMNode>(string: &mut String, node: &T) {
-                string.push_str("<");
-                string.push_str(node.tagname());
-                string.push_str(">");
+                match node.value() {
+                    DOMValue::Element { tag: tagname } => {
+                        string.push_str("<");
+                        string.push_str(tagname);
+                        string.push_str(">");
 
-                node.children().process_all::<HtmlStringBuilder>(string);
+                        node.children().process_all::<HtmlStringBuilder>(string);
 
-                string.push_str("</");
-                string.push_str(node.tagname());
-                string.push_str(">");
+                        string.push_str("</");
+                        string.push_str(tagname);
+                        string.push_str(">");
+                    }
+                    DOMValue::Text(text) => {
+                        // TODO: HTML escaping
+                        string.push_str(text);
+                    }
+                }
             }
             add_node
         }
@@ -179,14 +196,18 @@ mod tests {
     impl DOMNode for BogusOne {
         type ChildrenType = ();
         fn children(&self) -> &Self::ChildrenType { NONE_REF }
-        fn tagname(&self) -> &str { "bogus_tag_one" }
+        fn value<'a>(&'a self) -> DOMValue<'a> {
+            DOMValue::Element { tag: "bogus_tag_one" }
+        }
     }
 
     struct BogusTwo;
     impl DOMNode for BogusTwo {
         type ChildrenType = ();
         fn children(&self) -> &Self::ChildrenType { NONE_REF }
-        fn tagname(&self) -> &str { "bogus_tag_two" }
+        fn value<'a>(&'a self) -> DOMValue<'a> {
+            DOMValue::Element { tag: "bogus_tag_two" }
+        }
     }
 
     struct ChildCounter;
@@ -261,7 +282,7 @@ mod tests {
                 <bogus_tag_one></bogus_tag_one>
                 <bogus_tag_two></bogus_tag_two>
                 <table>
-                    <text_tag></text_tag>
+                    something
                     <th></th>
                     <tr></tr>
                     <tr></tr>
