@@ -12,7 +12,6 @@ pub mod tags {
 
     macro_rules! impl_tags {
         ($($tagname:ident,)*) => { $(
-            #[allow(dead_code)]
             pub struct $tagname<C: DOMChildren>(pub C);
             impl<C: DOMChildren> DOMNode for $tagname<C> {
                 type ChildrenType = C;
