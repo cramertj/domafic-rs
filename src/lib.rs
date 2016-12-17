@@ -7,6 +7,18 @@ impl<'a, T: DOMNode> DOMNode for &'a T {
     fn children(&self) -> &Self::ChildrenType { (*self).children() }
 }
 
+const NONE_REF: &'static () = &();
+
+impl DOMNode for String {
+    type ChildrenType = ();
+    fn children(&self) -> &Self::ChildrenType { NONE_REF }
+}
+
+impl<'a> DOMNode for &'a str {
+    type ChildrenType = ();
+    fn children(&self) -> &Self::ChildrenType { NONE_REF }
+}
+
 pub mod tags {
     use super::{DOMNode, DOMChildren};
 
@@ -133,18 +145,16 @@ mod tests {
     use super::*;
     use super::tags::*;
 
-    static NONE: () = ();
-
     struct BogusOne;
     impl DOMNode for BogusOne {
         type ChildrenType = ();
-        fn children(&self) -> &Self::ChildrenType { &NONE }
+        fn children(&self) -> &Self::ChildrenType { NONE_REF }
     }
 
     struct BogusTwo;
     impl DOMNode for BogusTwo {
         type ChildrenType = ();
-        fn children(&self) -> &Self::ChildrenType { &NONE }
+        fn children(&self) -> &Self::ChildrenType { NONE_REF }
     }
 
     struct ChildCounter;
@@ -187,6 +197,8 @@ mod tests {
             BogusOne,
             BogusTwo,
             Table ((
+                "something",
+                "something else".to_string(),
                 TH (()),
                 TR (()),
                 TR (()),
