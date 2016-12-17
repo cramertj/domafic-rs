@@ -87,7 +87,7 @@ pub mod tags {
         }
     }
 
-    pub struct Attrs<A: AsRef<[KeyValue]>>(A);
+    pub struct Attrs<A: AsRef<[KeyValue]>>(pub A);
     impl<C: DOMNodes, A: AsRef<[KeyValue]>> TagProperties for (Attrs<A>, C) {
         type Children = C;
         type Attributes = A;
@@ -396,21 +396,30 @@ mod tests {
         );
     }
 
-    #[test]
-    fn builds_attribute_list() {
-        let div = div(())
-            .with_attributes([("attr2", "key2"), ("attr3", "key3")])
-            .with_attributes([("attr1", "key1")]);
-
-        assert_eq!(div.get_attribute(0), Some(&("attr1", "key1")));
-        assert_eq!(div.get_attribute(1), Some(&("attr2", "key2")));
-        assert_eq!(div.get_attribute(2), Some(&("attr3", "key3")));
+    fn check_attribute_list<T: DOMNode>(div: T) {
+        assert_eq!(div.get_attribute(0), Some(&("attr1", "val1")));
+        assert_eq!(div.get_attribute(1), Some(&("attr2", "val2")));
+        assert_eq!(div.get_attribute(2), Some(&("attr3", "val3")));
         assert_eq!(div.get_attribute(3), None);
 
         let mut attr_iter = div.attributes();
-        assert_eq!(attr_iter.next(), Some(&("attr1", "key1")));
-        assert_eq!(attr_iter.next(), Some(&("attr2", "key2")));
-        assert_eq!(attr_iter.next(), Some(&("attr3", "key3")));
+        assert_eq!(attr_iter.next(), Some(&("attr1", "val1")));
+        assert_eq!(attr_iter.next(), Some(&("attr2", "val2")));
+        assert_eq!(attr_iter.next(), Some(&("attr3", "val3")));
         assert_eq!(attr_iter.next(), None);
+    }
+
+    #[test]
+    fn builds_attribute_list() {
+        let div1 = div(())
+            .with_attributes([("attr2", "val2"), ("attr3", "val3")])
+            .with_attributes([("attr1", "val1")]);
+        check_attribute_list(div1);
+
+        let div2 = div((
+            Attrs([("attr2", "val2"), ("attr3", "val3")]),
+            div(())
+        )).with_attributes([("attr1", "val1")]);
+        check_attribute_list(div2);
     }
 }
