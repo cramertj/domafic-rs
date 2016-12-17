@@ -1,11 +1,52 @@
-pub trait DOMNode {
+pub trait DOMNode: Sized {
     type ChildrenType: DOMChildren;
+    fn get_attribute(&self, _index: usize) -> Option<&KeyValue> { None }
+    fn attributes<'a>(&'a self) -> AttributeIter<'a, Self> {
+        AttributeIter { node: self, index: 0 }
+    }
+    fn with_attributes<A: AsRef<[KeyValue]>>(self, attrs: A) -> WithAttributes<Self, A> {
+        WithAttributes { node: self, attributes: attrs }
+    }
     fn children(&self) -> &Self::ChildrenType;
     fn value<'a>(&'a self) -> DOMValue<'a>;
 }
+
+type KeyValue = (&'static str, &'static str);
+
 pub enum DOMValue<'a> {
     Element { tag: &'a str },
     Text(&'a str),
+}
+
+pub struct WithAttributes<T: DOMNode, A: AsRef<[KeyValue]>> {
+    node: T,
+    attributes: A,
+}
+
+impl<T, A> DOMNode for WithAttributes<T, A> where T: DOMNode, A: AsRef<[KeyValue]> {
+    type ChildrenType = T::ChildrenType;
+    fn get_attribute(&self, index: usize) -> Option<&KeyValue> {
+        let attributes = self.attributes.as_ref();
+        attributes
+            .get(index)
+            .or_else(|| self.node.get_attribute(index - attributes.len()))
+    }
+    fn children(&self) -> &Self::ChildrenType { self.node.children() }
+    fn value<'a>(&'a self) -> DOMValue<'a> { self.node.value() }
+}
+
+pub struct AttributeIter<'a, T: DOMNode + 'a> {
+    node: &'a T,
+    index: usize,
+}
+
+impl<'a, T: DOMNode> Iterator for AttributeIter<'a, T> {
+    type Item = &'a (&'static str, &'static str);
+    fn next(&mut self) -> Option<Self::Item> {
+        let res = self.node.get_attribute(self.index);
+        self.index += 1;
+        res
+    }
 }
 
 impl<'a, T: DOMNode> DOMNode for &'a T {
@@ -299,5 +340,23 @@ mod tests {
             "#.chars().filter(|c| !c.is_whitespace()).collect::<String>(),
             string.to_lowercase()
         );
+    }
+
+    #[test]
+    fn builds_attribute_list() {
+        let div = (Div (()))
+            .with_attributes([("attr2", "key2"), ("attr3", "key3")])
+            .with_attributes([("attr1", "key1")]);
+
+        assert_eq!(div.get_attribute(0), Some(&("attr1", "key1")));
+        assert_eq!(div.get_attribute(1), Some(&("attr2", "key2")));
+        assert_eq!(div.get_attribute(2), Some(&("attr3", "key3")));
+        assert_eq!(div.get_attribute(3), None);
+
+        let mut attr_iter = div.attributes();
+        assert_eq!(attr_iter.next(), Some(&("attr1", "key1")));
+        assert_eq!(attr_iter.next(), Some(&("attr2", "key2")));
+        assert_eq!(attr_iter.next(), Some(&("attr3", "key3")));
+        assert_eq!(attr_iter.next(), None);
     }
 }
