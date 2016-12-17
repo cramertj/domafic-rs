@@ -85,6 +85,14 @@ impl<T: DOMChildren> DOMChildren for [T] {
     }
 }
 
+impl<T: DOMChildren> DOMChildren for Vec<T> {
+    fn process_all<P: DOMNodeProcessor>(&self, acc: &mut P::Acc) -> () {
+        for x in self {
+            x.process_all::<P>(acc);
+        }
+    }
+}
+
 macro_rules! array_impls {
     ($($len:expr,)*) => { $(
         impl<T: DOMChildren> DOMChildren for [T; $len] {
@@ -255,7 +263,7 @@ mod tests {
         (BogusOne, BogusOne,
             [BogusOne, BogusOne, BogusOne],
             [(BogusOne)],
-            [(), (), ()],
+            vec![(), (), ()],
             [&BogusTwo, &BogusTwo, &BogusTwo],
         ).process_all::<ChildCounter>(&mut count);
         assert_eq!(9, count);
