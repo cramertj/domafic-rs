@@ -1,4 +1,4 @@
-trait DOMNode {
+pub trait DOMNode {
     type ChildrenType: DOMChildren;
     fn children(&self) -> &Self::ChildrenType;
 }
@@ -7,14 +7,30 @@ impl<'a, T: DOMNode> DOMNode for &'a T {
     fn children(&self) -> &Self::ChildrenType { (*self).children() }
 }
 
-struct Div<C: DOMChildren>(C);
-impl<C: DOMChildren> DOMNode for Div<C> {
-    type ChildrenType = C;
-    fn children(&self) -> &Self::ChildrenType { &self.0 }
+pub mod tags {
+    use super::{DOMNode, DOMChildren};
+
+    macro_rules! impl_tags {
+        ($($tagname:ident,)*) => { $(
+            #[allow(dead_code)]
+            pub struct $tagname<C: DOMChildren>(pub C);
+            impl<C: DOMChildren> DOMNode for $tagname<C> {
+                type ChildrenType = C;
+                fn children(&self) -> &Self::ChildrenType { &self.0 }
+            }
+        )* }
+    }
+
+    impl_tags!(
+        A, B, Big, BlockQuote, Body, Br, Center, Del, Div, Em,
+        Font, Head, H1, H2, H3, H4, H5, H6, HR, I, Img, Ins,
+        Li, Ol, P, Pre, S, Small, Span, Strong, Sub, Sup,
+        Table, TD, TH, Title, TR, TT, U, UL,
+    );
 }
 
 /// Processor that can fold over all the children of a `DOMNode`
-trait DOMChildrenProcessor {
+pub trait DOMChildrenProcessor {
     /// Accumulator
     type Acc;
 
@@ -22,7 +38,7 @@ trait DOMChildrenProcessor {
     fn get_processor<T: DOMChildren>() -> fn(&mut Self::Acc, &T) -> ();
 }
 
-trait DOMChildren {
+pub trait DOMChildren {
     fn process_all<P: DOMChildrenProcessor>(&self, acc: &mut P::Acc) -> ();
 }
 
@@ -86,8 +102,8 @@ macro_rules! tuple_impls {
     // Finally expand into the implementation
     ([($idx:tt, $typ:ident); $( ($nidx:tt, $ntyp:ident); )*]) => {
         impl<$typ, $( $ntyp ),*> DOMChildren for ($typ, $( $ntyp ),*)
-            where $typ: DOMChildren + Copy,
-                  $( $ntyp: DOMChildren + Copy ),*
+            where $typ: DOMChildren,
+                  $( $ntyp: DOMChildren),*
         {
             fn process_all<P>(&self, acc: &mut P::Acc) -> ()
                     where P: DOMChildrenProcessor {
@@ -116,10 +132,10 @@ tuple_impls!(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use super::tags::*;
 
     static NONE: () = ();
 
-    #[derive(Copy, Clone)]
     struct BogusOne;
     impl DOMNode for BogusOne {
         type ChildrenType = ();
@@ -166,5 +182,26 @@ mod tests {
             [&BogusTwo, &BogusTwo, &BogusTwo],
         ).process_all::<ChildCounter>(&mut count);
         assert_eq!(9, count);
+
+        let div = Div ((
+            BogusOne,
+            BogusOne,
+            BogusTwo,
+            Table ((
+                TH (()),
+                TR (()),
+                TR (()),
+            )),
+        ));
+
+        count = 0;
+        div.process_all::<ChildCounter>(&mut count);
+        assert_eq!(1, count);
+
+        let div_children = div.children();
+
+        count = 0;
+        div_children.process_all::<ChildCounter>(&mut count);
+        assert_eq!(4, count);
     }
 }
