@@ -9,7 +9,7 @@ pub trait DOMNode: Sized {
     fn with_attributes<A: AsRef<[KeyValue]>>(self, attrs: A) -> WithAttributes<Self, A> {
         WithAttributes { node: self, attributes: attrs }
     }
-    fn process_children<P: DOMNodeProcessor>(&self, acc: &mut P::Acc) -> () where Self: Sized;
+    fn process_children<P: DOMNodeProcessor>(&self, acc: &mut P::Acc) -> Result<(), P::Error>;
     fn value<'a>(&'a self) -> DOMValue<'a>;
 }
 
@@ -32,7 +32,9 @@ impl<T, A> DOMNode for WithAttributes<T, A> where T: DOMNode, A: AsRef<[KeyValue
             .get(index)
             .or_else(|| self.node.get_attribute(index - attributes.len()))
     }
-    fn process_children<P: DOMNodeProcessor>(&self, _acc: &mut P::Acc) -> () {}
+    fn process_children<P: DOMNodeProcessor>(&self, _acc: &mut P::Acc) -> Result<(), P::Error> {
+        Ok(())
+    }
     fn value<'a>(&'a self) -> DOMValue<'a> { self.node.value() }
 }
 
@@ -51,19 +53,25 @@ impl<'a, T: DOMNode> Iterator for AttributeIter<'a, T> {
 }
 
 impl<'a, T: DOMNode> DOMNode for &'a T {
-    fn process_children<P: DOMNodeProcessor>(&self, acc: &mut P::Acc) -> () {
-        (*self).process_children::<P>(acc);
+    fn process_children<P: DOMNodeProcessor>(&self, acc: &mut P::Acc) -> Result<(), P::Error> {
+        (*self).process_children::<P>(acc)?;
+        Ok(())
     }
     fn value<'b>(&'b self) -> DOMValue<'b> { (*self).value() }
 }
 
 impl DOMNode for String {
-    fn process_children<P: DOMNodeProcessor>(&self, _acc: &mut P::Acc) -> () {}
+    fn process_children<P: DOMNodeProcessor>(&self, _acc: &mut P::Acc) -> Result<(), P::Error> {
+        Ok(())
+    }
+
     fn value<'a>(&'a self) -> DOMValue<'a> { DOMValue::Text(self) }
 }
 
 impl DOMNode for &'static str {
-    fn process_children<P: DOMNodeProcessor>(&self, _acc: &mut P::Acc) -> () {}
+    fn process_children<P: DOMNodeProcessor>(&self, _acc: &mut P::Acc) -> Result<(), P::Error> {
+        Ok(())
+    }
     fn value<'a>(&'a self) -> DOMValue<'a> { DOMValue::Text(self) }
 }
 
@@ -109,8 +117,9 @@ pub mod tags {
         fn get_attribute(&self, index: usize) -> Option<&KeyValue> {
             self.attributes.as_ref().get(index)
         }
-        fn process_children<P: DOMNodeProcessor>(&self, acc: &mut P::Acc) -> () {
-            self.contents.process_all::<P>(acc);
+        fn process_children<P: DOMNodeProcessor>(&self, acc: &mut P::Acc) -> Result<(), P::Error> {
+            self.contents.process_all::<P>(acc)?;
+            Ok(())
         }
         fn value<'a>(&'a self) -> DOMValue<'a> {
             DOMValue::Element {
@@ -149,48 +158,54 @@ pub mod tags {
 pub trait DOMNodeProcessor {
     /// Accumulator
     type Acc;
+    type Error;
 
     /// Folding function
-    fn get_processor<T: DOMNode>() -> fn(&mut Self::Acc, &T) -> ();
+    fn get_processor<T: DOMNode>() -> fn(&mut Self::Acc, &T) -> Result<(), Self::Error>;
 }
 
 pub trait DOMNodes {
-    fn process_all<P: DOMNodeProcessor>(&self, acc: &mut P::Acc) -> ();
+    fn process_all<P: DOMNodeProcessor>(&self, acc: &mut P::Acc) -> Result<(), P::Error>;
 }
 
 impl DOMNodes for () {
-    fn process_all<P: DOMNodeProcessor>(&self, _acc: &mut P::Acc) -> () {}
+    fn process_all<P: DOMNodeProcessor>(&self, _acc: &mut P::Acc) -> Result<(), P::Error> {
+        Ok(())
+    }
 }
 
 impl<T: DOMNode> DOMNodes for T {
-    fn process_all<P: DOMNodeProcessor>(&self, acc: &mut P::Acc) -> () {
-        P::get_processor()(acc, self);
+    fn process_all<P: DOMNodeProcessor>(&self, acc: &mut P::Acc) -> Result<(), P::Error> {
+        P::get_processor()(acc, self)
     }
 }
 
 impl<T: DOMNodes> DOMNodes for [T] {
-    fn process_all<P: DOMNodeProcessor>(&self, acc: &mut P::Acc) -> () {
+    fn process_all<P: DOMNodeProcessor>(&self, acc: &mut P::Acc) -> Result<(), P::Error> {
         for x in self {
-            x.process_all::<P>(acc);
+            x.process_all::<P>(acc)?;
         }
+        Ok(())
     }
 }
 
 impl<T: DOMNodes> DOMNodes for Vec<T> {
-    fn process_all<P: DOMNodeProcessor>(&self, acc: &mut P::Acc) -> () {
+    fn process_all<P: DOMNodeProcessor>(&self, acc: &mut P::Acc) -> Result<(), P::Error> {
         for x in self {
-            x.process_all::<P>(acc);
+            x.process_all::<P>(acc)?;
         }
+        Ok(())
     }
 }
 
 macro_rules! array_impls {
     ($($len:expr,)*) => { $(
         impl<T: DOMNodes> DOMNodes for [T; $len] {
-            fn process_all<P: DOMNodeProcessor>(&self, acc: &mut P::Acc) -> () {
+            fn process_all<P: DOMNodeProcessor>(&self, acc: &mut P::Acc) -> Result<(), P::Error> {
                 for x in self {
-                    x.process_all::<P>(acc);
+                    x.process_all::<P>(acc)?;
                 }
+                Ok(())
             }
         }
     )* }
@@ -229,12 +244,13 @@ macro_rules! tuple_impls {
             where $typ: DOMNodes,
                   $( $ntyp: DOMNodes),*
         {
-            fn process_all<P>(&self, acc: &mut P::Acc) -> ()
+            fn process_all<P>(&self, acc: &mut P::Acc) -> Result<(), P::Error>
                     where P: DOMNodeProcessor {
-                &self.$idx.process_all::<P>(acc);
+                &self.$idx.process_all::<P>(acc)?;
                 $(
-                    &self.$nidx.process_all::<P>(acc);
+                    &self.$nidx.process_all::<P>(acc)?;
                 )*
+                Ok(())
             }
         }
     }
@@ -253,39 +269,35 @@ tuple_impls!(
     (0 => A),
 );
 
-pub mod html_string {
+pub mod html_writer {
     use super::{DOMNode, DOMNodeProcessor, DOMValue};
+    use std::marker::PhantomData;
+    use std::io;
 
-    pub struct HtmlStringBuilder;
-    impl DOMNodeProcessor for HtmlStringBuilder {
-        type Acc = String;
+    pub struct HtmlWriter<W: io::Write>(PhantomData<W>);
+    impl<W: io::Write> DOMNodeProcessor for HtmlWriter<W> {
+        type Acc = W;
+        type Error = io::Error;
 
-        fn get_processor<T: DOMNode>() -> fn(&mut Self::Acc, &T) -> () {
-            fn add_node<T: DOMNode>(string: &mut String, node: &T) {
+        fn get_processor<T: DOMNode>() -> fn(&mut Self::Acc, &T) -> Result<(), Self::Error> {
+            fn add_node<W, T>(w: &mut W, node: &T) -> Result<(), io::Error>
+                    where W: io::Write, T: DOMNode {
                 match node.value() {
                     DOMValue::Element { tag: tagname } => {
-                        string.push_str("<");
-                        string.push_str(tagname);
+                        write!(w, "<{}", tagname)?;
                         for attr in node.attributes() {
-                            string.push_str(" ");
-                            string.push_str(attr.0);
-                            string.push_str("=\"");
-                            string.push_str(attr.1);
-                            string.push_str("\"")
+                            write!(w, " {}=\"{}\"", attr.0, attr.1)?;
                         }
-                        string.push_str(">");
-
-                        node.process_children::<HtmlStringBuilder>(string);
-
-                        string.push_str("</");
-                        string.push_str(tagname);
-                        string.push_str(">");
+                        write!(w, ">")?;
+                        node.process_children::<HtmlWriter<W>>(w)?;
+                        write!(w, "</{}>", tagname)?;
                     }
                     DOMValue::Text(text) => {
                         // TODO: HTML escaping
-                        string.push_str(text);
+                        write!(w, "{}", text)?;
                     }
                 }
+                Ok(())
             }
             add_node
         }
@@ -296,11 +308,13 @@ pub mod html_string {
 mod tests {
     use super::*;
     use super::tags::*;
-    use super::html_string::*;
+    use super::html_writer::*;
 
     struct BogusOne;
     impl DOMNode for BogusOne {
-        fn process_children<P: DOMNodeProcessor>(&self, _acc: &mut P::Acc) -> () {}
+        fn process_children<P: DOMNodeProcessor>(&self, _acc: &mut P::Acc) -> Result<(), P::Error> {
+            Ok(())
+        }
         fn value<'a>(&'a self) -> DOMValue<'a> {
             DOMValue::Element { tag: "bogus_tag_one" }
         }
@@ -308,19 +322,25 @@ mod tests {
 
     struct BogusTwo;
     impl DOMNode for BogusTwo {
-        fn process_children<P: DOMNodeProcessor>(&self, _acc: &mut P::Acc) -> () {}
+        fn process_children<P: DOMNodeProcessor>(&self, _acc: &mut P::Acc) -> Result<(), P::Error> {
+            Ok(())
+        }
         fn value<'a>(&'a self) -> DOMValue<'a> {
             DOMValue::Element { tag: "bogus_tag_two" }
         }
     }
 
     struct ChildCounter;
+    #[derive(Debug, Clone, Copy)]
+    enum Never {}
     impl DOMNodeProcessor for ChildCounter {
         type Acc = usize;
+        type Error = Never;
 
-        fn get_processor<T: DOMNode>() -> fn(&mut Self::Acc, &T) -> () {
-            fn incr<T: DOMNode>(count: &mut usize, _node: &T) {
+        fn get_processor<T: DOMNode>() -> fn(&mut Self::Acc, &T) -> Result<(), Never> {
+            fn incr<T: DOMNode>(count: &mut usize, _node: &T) -> Result<(), Never> {
                 *count += 1;
+                Ok(())
             }
             incr
         }
@@ -343,15 +363,15 @@ mod tests {
     #[test]
     fn counts_children() {
         let mut count = 0;
-        (BogusOne, &BogusOne, &BogusTwo).process_all::<ChildCounter>(&mut count);
+        (BogusOne, &BogusOne, &BogusTwo).process_all::<ChildCounter>(&mut count).unwrap();
         assert_eq!(3, count);
 
         count = 0;
-        (BogusOne, (BogusOne,), BogusOne).process_all::<ChildCounter>(&mut count);
+        (BogusOne, (BogusOne,), BogusOne).process_all::<ChildCounter>(&mut count).unwrap();
         assert_eq!(3, count);
 
         count = 0;
-        [BogusOne, BogusOne, BogusOne].process_all::<ChildCounter>(&mut count);
+        [BogusOne, BogusOne, BogusOne].process_all::<ChildCounter>(&mut count).unwrap();
         assert_eq!(3, count);
 
         count = 0;
@@ -360,24 +380,25 @@ mod tests {
             [(BogusOne)],
             vec![(), (), ()],
             [&BogusTwo, &BogusTwo, &BogusTwo],
-        ).process_all::<ChildCounter>(&mut count);
+        ).process_all::<ChildCounter>(&mut count).unwrap();
         assert_eq!(9, count);
 
         let sample = html_sample();
 
         count = 0;
-        sample.process_all::<ChildCounter>(&mut count);
+        sample.process_all::<ChildCounter>(&mut count).unwrap();
         assert_eq!(1, count);
 
         count = 0;
-        sample.process_children::<ChildCounter>(&mut count);
+        sample.process_children::<ChildCounter>(&mut count).unwrap();
         assert_eq!(4, count);
     }
 
     #[test]
     fn builds_string() {
-        let mut string = String::new();
-        html_sample().process_all::<HtmlStringBuilder>(&mut string);
+        let mut string_buffer = Vec::new();
+        html_sample().process_all::<HtmlWriter<Vec<u8>>>(&mut string_buffer).unwrap();
+        let string = String::from_utf8(string_buffer).unwrap();
         assert_eq!(
             r#"
             <div>
