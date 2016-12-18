@@ -348,6 +348,8 @@ mod tests {
 
     fn html_sample() -> impl DOMNode {
         div ((
+            Attrs([("attr", "value")]),
+            (
             BogusOne,
             BogusOne,
             BogusTwo,
@@ -357,6 +359,7 @@ mod tests {
                 tr (()),
                 tr (()),
             )),
+            )
         ))
     }
 
@@ -394,14 +397,18 @@ mod tests {
         assert_eq!(4, count);
     }
 
+    fn without_whitespace(string: String) -> String {
+        string.chars().filter(|c| !c.is_whitespace()).collect()
+    }
+
     #[test]
     fn builds_string() {
         let mut string_buffer = Vec::new();
         html_sample().process_all::<HtmlWriter<Vec<u8>>>(&mut string_buffer).unwrap();
         let string = String::from_utf8(string_buffer).unwrap();
         assert_eq!(
-            r#"
-            <div>
+            without_whitespace(r#"
+            <div attr="value">
                 <bogus_tag_one></bogus_tag_one>
                 <bogus_tag_one></bogus_tag_one>
                 <bogus_tag_two></bogus_tag_two>
@@ -412,8 +419,8 @@ mod tests {
                     <tr></tr>
                 </table>
             </div>
-            "#.chars().filter(|c| !c.is_whitespace()).collect::<String>(),
-            string.to_lowercase()
+            "#.to_string()),
+            without_whitespace(string)
         );
     }
 
