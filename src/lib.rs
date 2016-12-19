@@ -1,5 +1,8 @@
+#![cfg_attr(test, feature(conservative_impl_trait))]
+#![cfg_attr(not(any(feature = "use_std", test)), no_std)]
 
-#![feature(conservative_impl_trait)]
+#[cfg(not(any(feature = "use_std", test)))]
+extern crate core as std;
 
 pub trait DOMNode: Sized {
     fn get_attribute(&self, _index: usize) -> Option<&KeyValue> { None }
@@ -60,6 +63,7 @@ impl<'a, T: DOMNode> DOMNode for &'a T {
     fn value<'b>(&'b self) -> DOMValue<'b> { (*self).value() }
 }
 
+#[cfg(any(feature = "use_std", test))]
 impl DOMNode for String {
     fn process_children<P: DOMNodeProcessor>(&self, _acc: &mut P::Acc) -> Result<(), P::Error> {
         Ok(())
@@ -189,6 +193,7 @@ impl<T: DOMNodes> DOMNodes for [T] {
     }
 }
 
+#[cfg(any(feature = "use_std", test))]
 impl<T: DOMNodes> DOMNodes for Vec<T> {
     fn process_all<P: DOMNodeProcessor>(&self, acc: &mut P::Acc) -> Result<(), P::Error> {
         for x in self {
@@ -269,6 +274,7 @@ tuple_impls!(
     (0 => A),
 );
 
+#[cfg(any(feature = "use_std", test))]
 pub mod html_writer {
     use super::{DOMNode, DOMNodeProcessor, DOMValue};
     use std::marker::PhantomData;
