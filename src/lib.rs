@@ -184,6 +184,16 @@ impl<T: DOMNode> DOMNodes for T {
     }
 }
 
+impl<T: DOMNodes> DOMNodes for Option<T> {
+    fn process_all<P: DOMNodeProcessor>(&self, acc: &mut P::Acc) -> Result<(), P::Error> {
+        if let Some(ref inner) = *self {
+            inner.process_all::<P>(acc)
+        } else {
+            Ok(())
+        }
+    }
+}
+
 impl<T: DOMNodes> DOMNodes for [T] {
     fn process_all<P: DOMNodeProcessor>(&self, acc: &mut P::Acc) -> Result<(), P::Error> {
         for x in self {
@@ -431,7 +441,7 @@ mod tests {
                         tr("b"),
                     ))
                 } else {
-                    Either2::Two(())
+                    Either2::Two("sumthin else")
                 }
             ))
         ))
@@ -463,6 +473,7 @@ mod tests {
         builds_an_either_string(false, r#"
         <div>
             <table>
+                sumthin else
             </table>
         </div>
         "#);
