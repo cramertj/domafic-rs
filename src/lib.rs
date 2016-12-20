@@ -274,6 +274,53 @@ tuple_impls!(
     (0 => A),
 );
 
+#[cfg(feature = "use_either_n")]
+mod either_impls {
+    use super::{DOMNodes, DOMNodeProcessor};
+
+    extern crate either_n;
+    use self::either_n::*;
+
+    macro_rules! impl_enums {
+        () => {};
+
+        (($enum_name_head:ident, $n_head:ident),
+        $(($enum_name_tail:ident, $n_tail:ident),)*) => {
+
+            impl<$n_head, $( $n_tail ),*> DOMNodes for
+                $enum_name_head<$n_head, $( $n_tail ),*>
+                where $n_head: DOMNodes, $( $n_tail: DOMNodes ),*
+            {
+                fn process_all<P>(&self, acc: &mut P::Acc) -> Result<(), P::Error>
+                        where P: DOMNodeProcessor {
+                    match *self {
+                        $enum_name_head::$n_head(ref value) =>
+                            value.process_all::<P>(acc)?,
+                        $(
+                            $enum_name_head::$n_tail(ref value) =>
+                                value.process_all::<P>(acc)?
+                        ),*
+                    };
+                    Ok(())
+                }
+            }
+
+            impl_enums!($( ($enum_name_tail, $n_tail), )*);
+        }
+    }
+
+    impl_enums!(
+        (Either8, Eight),
+        (Either7, Seven),
+        (Either6, Six),
+        (Either5, Five),
+        (Either4, Four),
+        (Either3, Three),
+        (Either2, Two),
+        (Either1, One),
+    );
+}
+
 #[cfg(any(feature = "use_std", test))]
 pub mod html_writer {
     use super::{DOMNode, DOMNodeProcessor, DOMValue};
@@ -315,6 +362,11 @@ mod tests {
     use super::*;
     use super::tags::*;
     use super::html_writer::*;
+
+    #[cfg(feature = "use_either_n")]
+    extern crate either_n;
+    #[cfg(feature = "use_either_n")]
+    use self::either_n::*;
 
     struct BogusOne;
     impl DOMNode for BogusOne {
@@ -367,6 +419,53 @@ mod tests {
             )),
             )
         ))
+    }
+
+    #[cfg(feature = "use_either_n")]
+    fn html_either(include_rows: bool) -> impl DOMNode {
+        div((
+            table((
+                if include_rows {
+                    Either2::One((
+                        tr("a"),
+                        tr("b"),
+                    ))
+                } else {
+                    Either2::Two(())
+                }
+            ))
+        ))
+    }
+
+    #[cfg(feature = "use_either_n")]
+    fn builds_an_either_string(arg: bool, expected: &'static str) {
+        let mut string_buffer = Vec::new();
+        html_either(arg).process_all::<HtmlWriter<Vec<u8>>>(&mut string_buffer).unwrap();
+        let string = String::from_utf8(string_buffer).unwrap();
+        assert_eq!(
+            without_whitespace(expected.to_string()),
+            without_whitespace(string)
+        );
+    }
+
+    #[cfg(feature = "use_either_n")]
+    #[test]
+    fn builds_either_string() {
+        builds_an_either_string(true, r#"
+        <div>
+            <table>
+                <tr>a</tr>
+                <tr>b</tr>
+            </table>
+        </div>
+        "#);
+
+        builds_an_either_string(false, r#"
+        <div>
+            <table>
+            </table>
+        </div>
+        "#);
     }
 
     #[test]
