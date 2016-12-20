@@ -4,25 +4,65 @@
 #[cfg(not(any(feature = "use_std", test)))]
 extern crate core as std;
 
+/// A `DOMNode` specifies the HTML DOM (Document Object Model) representation of a type.
+///
+/// Note that there can be many different types that map to the same HTML. For example, both
+/// `String` and `str` can be used to create HTML text nodes.
 pub trait DOMNode: Sized {
+
+    /// Get the nth attribute for a given `DOMNode`.
+    ///
+    /// If `node.get_attribute(i)` returns `None`, `node.get_attribute(j)` should return `None`
+    /// for all `j >= i`.
     fn get_attribute(&self, _index: usize) -> Option<&KeyValue> { None }
+
+    /// Returns an iterator over a `DOMNode`'s attributes.
     fn attributes<'a>(&'a self) -> AttributeIter<'a, Self> {
         AttributeIter { node: self, index: 0 }
     }
+
+    /// Wrap the `DOMNode` in an additional set of attributes.
+    ///
+    /// Example:
+    ///
+    ///```rust
+    /// use domafic::DOMNode;
+    /// use domafic::tags::div;
+    ///
+    /// let my_div = div(());
+    /// let my_div_with_attrs = my_div.with_attributes([("key", "value")]);
+    ///
+    /// assert_eq!(my_div_with_attrs.get_attribute(0), Some(&("key", "value")));
+    ///```
     fn with_attributes<A: AsRef<[KeyValue]>>(self, attrs: A) -> WithAttributes<Self, A> {
         WithAttributes { node: self, attributes: attrs }
     }
+
+    /// Process the children of the node, modifying the accumulator `acc`.
+    ///
+    /// If processing any child fails, processing is short-circuited (the remaining children will
+    /// not be processed) and `process_children` returns an error.
     fn process_children<P: DOMNodeProcessor>(&self, acc: &mut P::Acc) -> Result<(), P::Error>;
+
+    /// Returns an enum representing either the node's HTML tag or, in the case of a text node,
+    /// the node's text value.
     fn value<'a>(&'a self) -> DOMValue<'a>;
 }
 
+/// A `KeyValue` is a pair of static strings corresponding to a mapping between a key and a value.
 type KeyValue = (&'static str, &'static str);
 
+/// "Value" of a `DOMNode`: either an element's tag name (e.g. "div"/"h1"/"body") or the text
+/// value of a text node (e.g. "Hello world!").
 pub enum DOMValue<'a> {
+    /// Tag name for an element
     Element { tag: &'a str },
+
+    /// The text value of a text node
     Text(&'a str),
 }
 
+/// Wrapper for `DOMNode`s that adds attributes.
 pub struct WithAttributes<T: DOMNode, A: AsRef<[KeyValue]>> {
     node: T,
     attributes: A,
@@ -41,6 +81,7 @@ impl<T, A> DOMNode for WithAttributes<T, A> where T: DOMNode, A: AsRef<[KeyValue
     fn value<'a>(&'a self) -> DOMValue<'a> { self.node.value() }
 }
 
+/// Iterator over the attributes of a `DOMNode`
 pub struct AttributeIter<'a, T: DOMNode + 'a> {
     node: &'a T,
     index: usize,
@@ -158,13 +199,20 @@ pub mod tags {
     );
 }
 
-/// Processor of a `DOMNode`
+/// `DOMNodeProcessor`s are used to iterate over `DOMNode`s which may or may not be the same type.
+/// Implementations of this trait resemble traditional `fold` functions, modifying an accumulator
+/// (of type `Acc`) and returning an error as necessary.
 pub trait DOMNodeProcessor {
-    /// Accumulator
+
+    /// Type of the accumulator updated by `get_processor`
     type Acc;
+
+    /// Type of error returned by failed calls to `get_processor`
     type Error;
 
-    /// Folding function
+    /// Returns a folding function capable of processing elements of type `T: DOMNode`.
+    ///
+    /// TODO: Example
     fn get_processor<T: DOMNode>() -> fn(&mut Self::Acc, &T) -> Result<(), Self::Error>;
 }
 
