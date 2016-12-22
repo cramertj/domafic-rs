@@ -95,7 +95,14 @@ pub trait DOMNode: Sized {
     /// application state.
     type Message;
 
-    //fn keystack(&self) -> KeyStack;
+    /// If present, the key will be included in the `KeyStack` returned alongside a message.
+    /// This should be used to differentiate messages from peer `DOMNode`s.
+    fn key(&self) -> Option<usize>;
+
+    fn with_key(self, key: usize) -> WithKey<Self> {
+        assert!(self.key() == None, "Attempted to add multiple keys to a DOMNode");
+        WithKey(self, key)
+    }
 
     /// Get the nth attribute for a given `DOMNode`.
     ///
@@ -166,6 +173,22 @@ pub enum DOMValue<'a> {
     Text(&'a str),
 }
 
+pub struct WithKey<T: DOMNode>(T, usize);
+impl<T: DOMNode> DOMNode for WithKey<T> {
+    type Message = T::Message;
+    fn key(&self) -> Option<usize> { Some(self.1) }
+    fn get_attribute(&self, index: usize) -> Option<&KeyValue> {
+        self.0.get_attribute(index)
+    }
+    fn process_listeners<P: ListenerProcessor<Self::Message>>(&self, acc: &mut P::Acc) -> Result<(), P::Error> {
+        self.0.process_listeners::<P>(acc)
+    }
+    fn process_children<P: DOMNodeProcessor>(&self, acc: &mut P::Acc) -> Result<(), P::Error> {
+        self.0.process_children::<P>(acc)
+    }
+    fn value<'a>(&'a self) -> DOMValue<'a> { self.0.value() }
+}
+
 pub struct WithMessageMap<T: DOMNode, NewMessage, M: Map<T::Message, Out=NewMessage>>
     (T, PhantomData<(NewMessage, M)>);
 
@@ -173,6 +196,7 @@ impl<T: DOMNode, NewMessage, MapM: Map<T::Message, Out=NewMessage>> DOMNode for
     WithMessageMap<T, NewMessage, MapM>
 {
     type Message = NewMessage;
+    fn key(&self) -> Option<usize> { self.0.key() }
     fn get_attribute(&self, index: usize) -> Option<&KeyValue> {
         self.0.get_attribute(index)
     }
@@ -193,6 +217,7 @@ pub struct WithAttributes<T: DOMNode, A: AsRef<[KeyValue]>> {
 
 impl<T, A> DOMNode for WithAttributes<T, A> where T: DOMNode, A: AsRef<[KeyValue]> {
     type Message = T::Message;
+    fn key(&self) -> Option<usize> { self.node.key() }
     fn get_attribute(&self, index: usize) -> Option<&KeyValue> {
         let attributes = self.attributes.as_ref();
         attributes
@@ -216,6 +241,7 @@ pub struct WithListeners<T: DOMNode, L: Listeners> {
 
 impl<T, L> DOMNode for WithListeners<T, L> where T: DOMNode, L: Listeners<Message=T::Message> {
     type Message = T::Message;
+    fn key(&self) -> Option<usize> { self.node.key() }
     fn get_attribute(&self, index: usize) -> Option<&KeyValue> {
         self.node.get_attribute(index)
     }
@@ -248,6 +274,7 @@ impl<'a, T: DOMNode> Iterator for AttributeIter<'a, T> {
 
 impl<'a, T: DOMNode> DOMNode for &'a T {
     type Message = T::Message;
+    fn key(&self) -> Option<usize> { (*self).key() }
     fn get_attribute(&self, index: usize) -> Option<&KeyValue> {
         (*self).get_attribute(index)
     }
@@ -290,6 +317,7 @@ impl<M> IntoNode<M> for &'static str {
 #[cfg(any(feature = "use_std", test))]
 impl<M> DOMNode for StringNode<M> {
     type Message = M;
+    fn key(&self) -> Option<usize> { None }
     fn get_attribute(&self, _index: usize) -> Option<&KeyValue> { None }
     fn process_listeners<P: ListenerProcessor<Self::Message>>(&self, _acc: &mut P::Acc) -> Result<(), P::Error> {
         Ok(())
@@ -302,6 +330,7 @@ impl<M> DOMNode for StringNode<M> {
 
 impl<M> DOMNode for StringRefNode<M> {
     type Message = M;
+    fn key(&self) -> Option<usize> { None }
     fn get_attribute(&self, _index: usize) -> Option<&KeyValue> { None }
     fn process_listeners<P: ListenerProcessor<Self::Message>>(&self, _acc: &mut P::Acc) -> Result<(), P::Error> {
         Ok(())
@@ -328,17 +357,23 @@ pub mod tags {
         Children: DOMNodes,
         Attributes: AsRef<[KeyValue]>,
         Listens: Listeners<Message=Children::Message>>
-        (Children, Attributes, Listens);
+    {
+        children: Children,
+        key: Option<usize>,
+        attributes: Attributes,
+        listeners: Listens,
+    }
 
     type EmptyAttrs = [KeyValue; 0];
 
     impl<C: DOMNodes> From<C> for TagProperties<C, EmptyAttrs, EmptyListeners<C::Message>> {
         fn from(nodes: C) -> TagProperties<C, EmptyAttrs, EmptyListeners<C::Message>> {
-            TagProperties (
-                nodes,
-                [],
-                empty_listeners(),
-            )
+            TagProperties {
+                children: nodes,
+                key: None,
+                attributes: [],
+                listeners: empty_listeners(),
+            }
         }
     }
 
@@ -356,27 +391,30 @@ pub mod tags {
         From<(Attrs<A>, C)> for TagProperties<C, A, EmptyListeners<C::Message>>
     {
         fn from(props: (Attrs<A>, C)) -> TagProperties<C, A, EmptyListeners<C::Message>> {
-            TagProperties (
-                props.1,
-                (props.0).0,
-                empty_listeners(),
-            )
+            TagProperties {
+                children: props.1,
+                key: None,
+                attributes: (props.0).0,
+                listeners: empty_listeners(),
+            }
         }
     }
 
     pub struct Tag<
-        Contents: DOMNodes,
+        Children: DOMNodes,
         Attributes: AsRef<[KeyValue]>,
-        L: Listeners<Message=Contents::Message>>
+        L: Listeners<Message=Children::Message>>
     {
         tagname: &'static str,
-        contents: Contents,
+        children: Children,
+        key: Option<usize>,
         attributes: Attributes,
         listeners: L,
     }
 
     impl<C: DOMNodes, A: AsRef<[KeyValue]>, L: Listeners<Message=C::Message>> DOMNode for Tag<C, A, L> {
         type Message = C::Message;
+        fn key(&self) -> Option<usize> { self.key }
         fn get_attribute(&self, index: usize) -> Option<&KeyValue> {
             self.attributes.as_ref().get(index)
         }
@@ -384,7 +422,7 @@ pub mod tags {
             self.listeners.process_all::<P>(acc)
         }
         fn process_children<P: DOMNodeProcessor>(&self, acc: &mut P::Acc) -> Result<(), P::Error> {
-            self.contents.process_all::<P>(acc)
+            self.children.process_all::<P>(acc)
         }
         fn value<'a>(&'a self) -> DOMValue<'a> {
             DOMValue::Element {
@@ -403,10 +441,17 @@ pub mod tags {
                 >(properties: T)
                 -> Tag<C, A, L>
             {
-                let TagProperties(contents, attributes, listeners) = properties.into();
+                let TagProperties {
+                    children,
+                    key,
+                    attributes,
+                    listeners,
+                } = properties.into();
+
                 Tag {
                     tagname: stringify!($tagname),
-                    contents: contents,
+                    children: children,
+                    key: key,
                     attributes: attributes,
                     listeners: listeners,
                 }
@@ -861,6 +906,7 @@ mod tests {
     struct BogusOne;
     impl DOMNode for BogusOne {
         type Message = Never;
+        fn key(&self) -> Option<usize> { None }
         fn get_attribute(&self, _index: usize) -> Option<&KeyValue> { None }
         fn process_listeners<P: ListenerProcessor<Self::Message>>(&self, _acc: &mut P::Acc) -> Result<(), P::Error> {
             Ok(())
@@ -876,6 +922,7 @@ mod tests {
     struct BogusTwo;
     impl DOMNode for BogusTwo {
         type Message = Never;
+        fn key(&self) -> Option<usize> { None }
         fn get_attribute(&self, _index: usize) -> Option<&KeyValue> { None }
         fn process_listeners<P: ListenerProcessor<Self::Message>>(&self, _acc: &mut P::Acc) -> Result<(), P::Error> {
             Ok(())
