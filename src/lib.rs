@@ -347,7 +347,18 @@ pub trait DOMNodes {
 pub trait Listener {
     type Message;
     fn event_types_handled<'a>() -> &'a [events::EventType];
-    fn handle_event(event: events::Event) -> Self::Message;
+    fn handle_event(&self, event: events::Event) -> Self::Message;
+}
+
+pub struct MappedListener<M, L: Listener, F: Fn(L::Message) -> M>(L, F, PhantomData<M>);
+impl<M, L: Listener, F: Fn(L::Message) -> M> Listener for MappedListener<M, L, F> {
+    type Message = M;
+    fn event_types_handled<'a>() -> &'a [events::EventType] {
+        L::event_types_handled()
+    }
+    fn handle_event(&self, event: events::Event) -> Self::Message {
+        self.1(self.0.handle_event(event))
+    }
 }
 
 /// `ListenerProcessor`s are used to iterate over `Listeners`s which may or may not be the same
