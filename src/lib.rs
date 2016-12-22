@@ -49,6 +49,12 @@ pub trait DOMNode: Sized {
         WithListeners { node: self, listeners: listeners, }
     }
 
+    fn map_listeners<NewMessage, M: Map<Self::Message, Out=NewMessage>>(self)
+        -> WithMessageMap<Self, NewMessage, M>
+    {
+        WithMessageMap(self, PhantomData)
+    }
+
     /// Process the listeners of the node, modifying the accumulator `acc`.
     ///
     /// If processing any listener fails, processing is short-circuited (the remaining listeners
@@ -79,6 +85,25 @@ pub enum DOMValue<'a> {
     Text(&'a str),
 }
 
+pub struct WithMessageMap<T: DOMNode, NewMessage, M: Map<T::Message, Out=NewMessage>>
+    (T, PhantomData<(NewMessage, M)>);
+
+impl<T: DOMNode, NewMessage, MapM: Map<T::Message, Out=NewMessage>> DOMNode for
+    WithMessageMap<T, NewMessage, MapM>
+{
+    type Message = NewMessage;
+    fn get_attribute(&self, index: usize) -> Option<&KeyValue> {
+        self.0.get_attribute(index)
+    }
+    fn process_listeners<P: ListenerProcessor<Self::Message>>(&self, acc: &mut P::Acc) -> Result<(), P::Error> {
+        self.0.process_listeners::<MappedListenerProcessor<NewMessage, T::Message, P, MapM>>(acc)
+    }
+    fn process_children<P: DOMNodeProcessor>(&self, acc: &mut P::Acc) -> Result<(), P::Error> {
+        self.0.process_children::<P>(acc)
+    }
+    fn value<'a>(&'a self) -> DOMValue<'a> { self.0.value() }
+}
+
 /// Wrapper for `DOMNode`s that adds attributes.
 pub struct WithAttributes<T: DOMNode, A: AsRef<[KeyValue]>> {
     node: T,
@@ -96,8 +121,8 @@ impl<T, A> DOMNode for WithAttributes<T, A> where T: DOMNode, A: AsRef<[KeyValue
     fn process_listeners<P: ListenerProcessor<Self::Message>>(&self, acc: &mut P::Acc) -> Result<(), P::Error> {
         self.node.process_listeners::<P>(acc)
     }
-    fn process_children<P: DOMNodeProcessor>(&self, _acc: &mut P::Acc) -> Result<(), P::Error> {
-        Ok(())
+    fn process_children<P: DOMNodeProcessor>(&self, acc: &mut P::Acc) -> Result<(), P::Error> {
+        self.node.process_children::<P>(acc)
     }
     fn value<'a>(&'a self) -> DOMValue<'a> { self.node.value() }
 }
@@ -113,12 +138,14 @@ impl<T, L> DOMNode for WithListeners<T, L> where T: DOMNode, L: Listeners<Messag
     fn get_attribute(&self, index: usize) -> Option<&KeyValue> {
         self.node.get_attribute(index)
     }
-    fn process_listeners<P: ListenerProcessor<Self::Message>>(&self, acc: &mut P::Acc) -> Result<(), P::Error> {
+    fn process_listeners<P: ListenerProcessor<Self::Message>>
+        (&self, acc: &mut P::Acc) -> Result<(), P::Error>
+    {
         self.listeners.process_all::<P>(acc)?;
         self.node.process_listeners::<P>(acc)
     }
-    fn process_children<P: DOMNodeProcessor>(&self, _acc: &mut P::Acc) -> Result<(), P::Error> {
-        Ok(())
+    fn process_children<P: DOMNodeProcessor>(&self, acc: &mut P::Acc) -> Result<(), P::Error> {
+        self.node.process_children::<P>(acc)
     }
     fn value<'a>(&'a self) -> DOMValue<'a> { self.node.value() }
 }
