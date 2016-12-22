@@ -41,8 +41,12 @@ pub trait DOMNode: Sized {
     ///
     /// assert_eq!(my_div_with_attrs.get_attribute(0), Some(&("key", "value")));
     ///```
-    fn with_attributes<A: AsRef<[KeyValue]>>(self, attrs: A) -> WithAttributes<Self, A> {
-        WithAttributes { node: self, attributes: attrs, }
+    fn with_attributes<A: AsRef<[KeyValue]>>(self, attributes: A) -> WithAttributes<Self, A> {
+        WithAttributes { node: self, attributes: attributes, }
+    }
+
+    fn with_listeners<L: Listeners>(self, listeners: L) -> WithListeners<Self, L> {
+        WithListeners { node: self, listeners: listeners, }
     }
 
     /// Process the listeners of the node, modifying the accumulator `acc`.
@@ -98,6 +102,26 @@ impl<T, A> DOMNode for WithAttributes<T, A> where T: DOMNode, A: AsRef<[KeyValue
     fn value<'a>(&'a self) -> DOMValue<'a> { self.node.value() }
 }
 
+/// Wrapper for `DOMNode`s that adds listeners.
+pub struct WithListeners<T: DOMNode, L: Listeners> {
+    node: T,
+    listeners: L,
+}
+
+impl<T, L> DOMNode for WithListeners<T, L> where T: DOMNode, L: Listeners {
+    type Message = T::Message;
+    fn get_attribute(&self, index: usize) -> Option<&KeyValue> {
+        self.node.get_attribute(index)
+    }
+    fn process_listeners<P: ListenerProcessor>(&self, acc: &mut P::Acc) -> Result<(), P::Error> {
+        self.listeners.process_all::<P>(acc)?;
+        self.node.process_listeners::<P>(acc)
+    }
+    fn process_children<P: DOMNodeProcessor>(&self, _acc: &mut P::Acc) -> Result<(), P::Error> {
+        Ok(())
+    }
+    fn value<'a>(&'a self) -> DOMValue<'a> { self.node.value() }
+}
 
 /// Iterator over the attributes of a `DOMNode`
 pub struct AttributeIter<'a, T: DOMNode + 'a> {
