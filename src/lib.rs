@@ -16,21 +16,6 @@ pub trait DOMNode: Sized {
     /// application state.
     type Message;
 
-    /// Get the nth listener for a given `DOMNode`.
-    ///
-    /// If `node.get_listener(i)` returns `None`, `node.get_listener(j)` should return `None`
-    /// for all `j >= i`.
-    fn get_listener(&self, _index: usize) -> Option<&Listener<Self::Message>>;
-
-    /// Returns an iterator over a `DOMNode`'s listeners.
-    fn listeners<'a>(&'a self) -> ListenerIter<'a, Self> {
-        ListenerIter { node: self, index: 0, }
-    }
-
-    fn with_listeners<L: AsRef<[Listener<Self::Message>]>>(self, listeners: L) -> WithListeners<Self, L> {
-        WithListeners { node: self, listeners: listeners, }
-    }
-
     /// Get the nth attribute for a given `DOMNode`.
     ///
     /// If `node.get_attribute(i)` returns `None`, `node.get_attribute(j)` should return `None`
@@ -60,6 +45,12 @@ pub trait DOMNode: Sized {
         WithAttributes { node: self, attributes: attrs, }
     }
 
+    /// Process the listeners of the node, modifying the accumulator `acc`.
+    ///
+    /// If processing any listener fails, processing is short-circuited (the remaining listeners
+    /// will not be processed) and `process_listeners` returns an error.
+    fn process_listeners<P: ListenerProcessor>(&self, acc: &mut P::Acc) -> Result<(), P::Error>;
+
     /// Process the children of the node, modifying the accumulator `acc`.
     ///
     /// If processing any child fails, processing is short-circuited (the remaining children will
@@ -70,8 +61,6 @@ pub trait DOMNode: Sized {
     /// the node's text value.
     fn value<'a>(&'a self) -> DOMValue<'a>;
 }
-
-pub struct Listener<Message>(events::EventType, fn(events::Event) -> Message);
 
 /// A `KeyValue` is a pair of static strings corresponding to a mapping between a key and a value.
 type KeyValue = (&'static str, &'static str);
@@ -94,43 +83,21 @@ pub struct WithAttributes<T: DOMNode, A: AsRef<[KeyValue]>> {
 
 impl<T, A> DOMNode for WithAttributes<T, A> where T: DOMNode, A: AsRef<[KeyValue]> {
     type Message = T::Message;
-    fn get_listener(&self, index: usize) -> Option<&Listener<Self::Message>> {
-        self.node.get_listener(index)
-    }
     fn get_attribute(&self, index: usize) -> Option<&KeyValue> {
         let attributes = self.attributes.as_ref();
         attributes
             .get(index)
             .or_else(|| self.node.get_attribute(index - attributes.len()))
     }
-    fn process_children<P: DOMNodeProcessor>(&self, _acc: &mut P::Acc) -> Result<(), P::Error> {
-        Ok(())
-    }
-    fn value<'a>(&'a self) -> DOMValue<'a> { self.node.value() }
-}
-
-// Wrapper type for `DOMNode`s that adds listeners.
-pub struct WithListeners<T: DOMNode, L: AsRef<[Listener<T::Message>]>> {
-    node: T,
-    listeners: L,
-}
-
-impl<T, L> DOMNode for WithListeners<T, L> where T: DOMNode, L: AsRef<[Listener<T::Message>]> {
-    type Message = T::Message;
-    fn get_listener(&self, index: usize) -> Option<&Listener<Self::Message>> {
-        let listeners = self.listeners.as_ref();
-        listeners
-            .get(index)
-            .or_else(|| self.node.get_listener(index - listeners.len()))
-    }
-    fn get_attribute(&self, index: usize) -> Option<&KeyValue> {
-        self.node.get_attribute(index)
+    fn process_listeners<P: ListenerProcessor>(&self, acc: &mut P::Acc) -> Result<(), P::Error> {
+        self.node.process_listeners::<P>(acc)
     }
     fn process_children<P: DOMNodeProcessor>(&self, _acc: &mut P::Acc) -> Result<(), P::Error> {
         Ok(())
     }
     fn value<'a>(&'a self) -> DOMValue<'a> { self.node.value() }
 }
+
 
 /// Iterator over the attributes of a `DOMNode`
 pub struct AttributeIter<'a, T: DOMNode + 'a> {
@@ -147,32 +114,16 @@ impl<'a, T: DOMNode> Iterator for AttributeIter<'a, T> {
     }
 }
 
-/// Iterator over the listeners of a `DOMNode`
-pub struct ListenerIter<'a, T: DOMNode + 'a> {
-    node: &'a T,
-    index: usize,
-}
-
-impl<'a, T: DOMNode> Iterator for ListenerIter<'a, T> {
-    type Item = &'a Listener<T::Message>;
-    fn next(&mut self) -> Option<Self::Item> {
-        let res = self.node.get_listener(self.index);
-        self.index += 1;
-        res
-    }
-}
-
 impl<'a, T: DOMNode> DOMNode for &'a T {
     type Message = T::Message;
-    fn get_listener(&self, index: usize) -> Option<&Listener<Self::Message>> {
-        (*self).get_listener(index)
-    }
     fn get_attribute(&self, index: usize) -> Option<&KeyValue> {
         (*self).get_attribute(index)
     }
+    fn process_listeners<P: ListenerProcessor>(&self, acc: &mut P::Acc) -> Result<(), P::Error> {
+        (*self).process_listeners::<P>(acc)
+    }
     fn process_children<P: DOMNodeProcessor>(&self, acc: &mut P::Acc) -> Result<(), P::Error> {
-        (*self).process_children::<P>(acc)?;
-        Ok(())
+        (*self).process_children::<P>(acc)
     }
     fn value<'b>(&'b self) -> DOMValue<'b> { (*self).value() }
 }
@@ -207,8 +158,10 @@ impl<M> IntoNode<M> for &'static str {
 #[cfg(any(feature = "use_std", test))]
 impl<M> DOMNode for StringNode<M> {
     type Message = M;
-    fn get_listener(&self, _index: usize) -> Option<&Listener<M>> { None }
     fn get_attribute(&self, _index: usize) -> Option<&KeyValue> { None }
+    fn process_listeners<P: ListenerProcessor>(&self, _acc: &mut P::Acc) -> Result<(), P::Error> {
+        Ok(())
+    }
     fn process_children<P: DOMNodeProcessor>(&self, _acc: &mut P::Acc) -> Result<(), P::Error> {
         Ok(())
     }
@@ -217,8 +170,10 @@ impl<M> DOMNode for StringNode<M> {
 
 impl<M> DOMNode for StringRefNode<M> {
     type Message = M;
-    fn get_listener(&self, _index: usize) -> Option<&Listener<M>> { None }
     fn get_attribute(&self, _index: usize) -> Option<&KeyValue> { None }
+    fn process_listeners<P: ListenerProcessor>(&self, _acc: &mut P::Acc) -> Result<(), P::Error> {
+        Ok(())
+    }
     fn process_children<P: DOMNodeProcessor>(&self, _acc: &mut P::Acc) -> Result<(), P::Error> {
         Ok(())
     }
@@ -235,23 +190,22 @@ impl<Message> From<&'static str> for StringRefNode<Message> {
 }
 
 pub mod tags {
-    use super::{DOMNode, DOMNodeProcessor, DOMNodes, DOMValue, KeyValue, Listener, PhantomData};
+    use super::*;
 
     pub struct TagProperties<
         Children: DOMNodes,
         Attributes: AsRef<[KeyValue]>,
-        Listeners: AsRef<[Listener<<Children as DOMNodes>::Message>]>>
-        (Children, Attributes, Listeners);
+        Listens: Listeners<Message=Children::Message>>
+        (Children, Attributes, Listens);
 
     type EmptyAttrs = [KeyValue; 0];
-    type EmptyListens<C> = [Listener<<C as DOMNodes>::Message>; 0];
 
-    impl<C: DOMNodes> From<C> for TagProperties<C, EmptyAttrs, EmptyListens<C>> {
-        fn from(nodes: C) -> TagProperties<C, EmptyAttrs, EmptyListens<C>> {
+    impl<C: DOMNodes> From<C> for TagProperties<C, EmptyAttrs, EmptyListeners<C::Message>> {
+        fn from(nodes: C) -> TagProperties<C, EmptyAttrs, EmptyListeners<C::Message>> {
             TagProperties (
                 nodes,
                 [],
-                []
+                empty_listeners(),
             )
         }
     }
@@ -259,21 +213,21 @@ pub mod tags {
     pub fn attributes<A: AsRef<[KeyValue]>>(attrs: A) -> Attrs<A> {
         Attrs(attrs)
     }
-    pub fn listeners<M, L: AsRef<[Listener<M>]>>(listeners: L) -> Listens<M, L> {
+    pub fn listeners<M, L: Listeners<Message=M>>(listeners: L) -> Listens<M, L> {
         Listens(listeners, PhantomData)
     }
 
     pub struct Attrs<A: AsRef<[KeyValue]>>(A);
-    pub struct Listens<M, L: AsRef<[Listener<M>]>>(L, PhantomData<M>);
+    pub struct Listens<M, L: Listeners<Message=M>>(L, PhantomData<M>);
 
     impl<C: DOMNodes, A: AsRef<[KeyValue]>>
-        From<(Attrs<A>, C)> for TagProperties<C, A, EmptyListens<C>>
+        From<(Attrs<A>, C)> for TagProperties<C, A, EmptyListeners<C::Message>>
     {
-        fn from(props: (Attrs<A>, C)) -> TagProperties<C, A, EmptyListens<C>> {
+        fn from(props: (Attrs<A>, C)) -> TagProperties<C, A, EmptyListeners<C::Message>> {
             TagProperties (
                 props.1,
                 (props.0).0,
-                []
+                empty_listeners(),
             )
         }
     }
@@ -281,25 +235,24 @@ pub mod tags {
     pub struct Tag<
         Contents: DOMNodes,
         Attributes: AsRef<[KeyValue]>,
-        Listeners: AsRef<[Listener<Contents::Message>]>>
+        L: Listeners<Message=Contents::Message>>
     {
         tagname: &'static str,
         contents: Contents,
         attributes: Attributes,
-        listeners: Listeners,
+        listeners: L,
     }
 
-    impl<C: DOMNodes, A: AsRef<[KeyValue]>, L: AsRef<[Listener<C::Message>]>> DOMNode for Tag<C, A, L> {
+    impl<C: DOMNodes, A: AsRef<[KeyValue]>, L: Listeners<Message=C::Message>> DOMNode for Tag<C, A, L> {
         type Message = C::Message;
-        fn get_listener(&self, index: usize) -> Option<&Listener<C::Message>> {
-            self.listeners.as_ref().get(index)
-        }
         fn get_attribute(&self, index: usize) -> Option<&KeyValue> {
             self.attributes.as_ref().get(index)
         }
+        fn process_listeners<P: ListenerProcessor>(&self, acc: &mut P::Acc) -> Result<(), P::Error> {
+            self.listeners.process_all::<P>(acc)
+        }
         fn process_children<P: DOMNodeProcessor>(&self, acc: &mut P::Acc) -> Result<(), P::Error> {
-            self.contents.process_all::<P>(acc)?;
-            Ok(())
+            self.contents.process_all::<P>(acc)
         }
         fn value<'a>(&'a self) -> DOMValue<'a> {
             DOMValue::Element {
@@ -313,7 +266,7 @@ pub mod tags {
             pub fn $tagname<
                 C: DOMNodes,
                 A: AsRef<[KeyValue]>,
-                L: AsRef<[Listener<<C as DOMNodes>::Message>]>,
+                L: Listeners<Message=C::Message>,
                 T: Into<TagProperties<C, A, L>>
                 >(properties: T)
                 -> Tag<C, A, L>
@@ -342,6 +295,9 @@ pub mod tags {
     );
 }
 
+// Note: without an extension to HTRBs, I don't know of a way to make the following traits generic
+// enough to prevent duplication (need to be able to be generic on the `DOMNode`/`Listener` bounds)
+
 /// `DOMNodeProcessor`s are used to iterate over `DOMNode`s which may or may not be the same type.
 /// Implementations of this trait resemble traditional `fold` functions, modifying an accumulator
 /// (of type `Acc`) and returning an error as necessary.
@@ -357,6 +313,39 @@ pub trait DOMNodeProcessor {
     ///
     /// TODO: Example
     fn get_processor<T: DOMNode>() -> fn(&mut Self::Acc, &T) -> Result<(), Self::Error>;
+}
+
+pub trait DOMNodes {
+    type Message;
+    fn process_all<P: DOMNodeProcessor>(&self, acc: &mut P::Acc) -> Result<(), P::Error>;
+}
+
+pub trait Listener {
+    type Message;
+    fn event_types_handled<'a>() -> &'a [events::EventType];
+    fn handle_event(event: events::Event) -> Self::Message;
+}
+
+/// `ListenerProcessor`s are used to iterate over `Listeners`s which may or may not be the same
+/// type. Implementations of this trait resemble traditional `fold` functions, modifying an
+/// accumulator (of type `Acc`) and returning an error as necessary.
+pub trait ListenerProcessor {
+
+    /// Type of the accumulator updated by `get_processor`
+    type Acc;
+
+    /// Type of error returned by failed calls to `get_processor`
+    type Error;
+
+    /// Returns a folding function capable of processing elements of type `T: DOMNode`.
+    ///
+    /// TODO: Example
+    fn get_processor<T: Listener>() -> fn(&mut Self::Acc, &T) -> Result<(), Self::Error>;
+}
+
+pub trait Listeners {
+    type Message;
+    fn process_all<P: ListenerProcessor>(&self, acc: &mut P::Acc) -> Result<(), P::Error>;
 }
 
 pub mod events {
@@ -392,18 +381,22 @@ pub mod events {
     pub struct Event {}
 }
 
-pub trait DOMNodes {
-    type Message;
-    fn process_all<P: DOMNodeProcessor>(&self, acc: &mut P::Acc) -> Result<(), P::Error>;
-}
-
-
 #[derive(Copy, Clone, Debug, Hash, Eq, PartialEq, Ord, PartialOrd)]
 pub struct EmptyNodes<Message>(PhantomData<Message>);
 pub fn empty<Message>() -> EmptyNodes<Message> { EmptyNodes(PhantomData) }
 impl<M> DOMNodes for EmptyNodes<M> {
     type Message = M;
     fn process_all<P: DOMNodeProcessor>(&self, _acc: &mut P::Acc) -> Result<(), P::Error> {
+        Ok(())
+    }
+}
+
+#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq, Ord, PartialOrd)]
+pub struct EmptyListeners<Message>(PhantomData<Message>);
+pub fn empty_listeners<Message>() -> EmptyListeners<Message> { EmptyListeners(PhantomData) }
+impl<M> Listeners for EmptyListeners<M> {
+    type Message = M;
+    fn process_all<P: ListenerProcessor>(&self, _acc: &mut P::Acc) -> Result<(), P::Error> {
         Ok(())
     }
 }
@@ -415,9 +408,27 @@ impl<T: DOMNode> DOMNodes for T {
     }
 }
 
+impl<T: Listener> Listeners for T {
+    type Message = T::Message;
+    fn process_all<P: ListenerProcessor>(&self, acc: &mut P::Acc) -> Result<(), P::Error> {
+        P::get_processor()(acc, self)
+    }
+}
+
 impl<T: DOMNodes> DOMNodes for Option<T> {
     type Message = T::Message;
     fn process_all<P: DOMNodeProcessor>(&self, acc: &mut P::Acc) -> Result<(), P::Error> {
+        if let Some(ref inner) = *self {
+            inner.process_all::<P>(acc)
+        } else {
+            Ok(())
+        }
+    }
+}
+
+impl<L: Listeners> Listeners for Option<L> {
+    type Message = L::Message;
+    fn process_all<P: ListenerProcessor>(&self, acc: &mut P::Acc) -> Result<(), P::Error> {
         if let Some(ref inner) = *self {
             inner.process_all::<P>(acc)
         } else {
@@ -436,10 +447,31 @@ impl<T: DOMNodes> DOMNodes for [T] {
     }
 }
 
+impl<T: Listeners> Listeners for [T] {
+    type Message = T::Message;
+    fn process_all<P: ListenerProcessor>(&self, acc: &mut P::Acc) -> Result<(), P::Error> {
+        for x in self {
+            x.process_all::<P>(acc)?;
+        }
+        Ok(())
+    }
+}
+
 #[cfg(any(feature = "use_std", test))]
 impl<T: DOMNodes> DOMNodes for Vec<T> {
     type Message = T::Message;
     fn process_all<P: DOMNodeProcessor>(&self, acc: &mut P::Acc) -> Result<(), P::Error> {
+        for x in self {
+            x.process_all::<P>(acc)?;
+        }
+        Ok(())
+    }
+}
+
+#[cfg(any(feature = "use_std", test))]
+impl<T: Listeners> Listeners for Vec<T> {
+    type Message = T::Message;
+    fn process_all<P: ListenerProcessor>(&self, acc: &mut P::Acc) -> Result<(), P::Error> {
         for x in self {
             x.process_all::<P>(acc)?;
         }
@@ -452,6 +484,16 @@ macro_rules! array_impls {
         impl<T: DOMNodes> DOMNodes for [T; $len] {
             type Message = T::Message;
             fn process_all<P: DOMNodeProcessor>(&self, acc: &mut P::Acc) -> Result<(), P::Error> {
+                for x in self {
+                    x.process_all::<P>(acc)?;
+                }
+                Ok(())
+            }
+        }
+
+        impl<T: Listeners> Listeners for [T; $len] {
+            type Message = T::Message;
+            fn process_all<P: ListenerProcessor>(&self, acc: &mut P::Acc) -> Result<(), P::Error> {
                 for x in self {
                     x.process_all::<P>(acc)?;
                 }
@@ -504,6 +546,21 @@ macro_rules! tuple_impls {
                 Ok(())
             }
         }
+
+        impl<$typ, $( $ntyp ),*> Listeners for ($typ, $( $ntyp ),*)
+            where $typ: Listeners,
+                  $( $ntyp: Listeners<Message=$typ::Message>),*
+        {
+            type Message = $typ::Message;
+            fn process_all<P>(&self, acc: &mut P::Acc) -> Result<(), P::Error>
+                    where P: ListenerProcessor {
+                &self.$idx.process_all::<P>(acc)?;
+                $(
+                    &self.$nidx.process_all::<P>(acc)?;
+                )*
+                Ok(())
+            }
+        }
     }
 }
 
@@ -522,7 +579,7 @@ tuple_impls!(
 
 #[cfg(feature = "use_either_n")]
 mod either_impls {
-    use super::{DOMNodes, DOMNodeProcessor};
+    use super::{DOMNodes, DOMNodeProcessor, Listeners, ListenerProcessor};
 
     extern crate either_n;
     use self::either_n::*;
@@ -540,6 +597,25 @@ mod either_impls {
                 type Message = $n_head::Message;
                 fn process_all<P>(&self, acc: &mut P::Acc) -> Result<(), P::Error>
                         where P: DOMNodeProcessor {
+                    match *self {
+                        $enum_name_head::$n_head(ref value) =>
+                            value.process_all::<P>(acc)?,
+                        $(
+                            $enum_name_head::$n_tail(ref value) =>
+                                value.process_all::<P>(acc)?
+                        ),*
+                    };
+                    Ok(())
+                }
+            }
+
+            impl<$n_head, $( $n_tail ),*> Listeners for
+                $enum_name_head<$n_head, $( $n_tail ),*>
+                where $n_head: Listeners, $( $n_tail: Listeners<Message=$n_head::Message> ),*
+            {
+                type Message = $n_head::Message;
+                fn process_all<P>(&self, acc: &mut P::Acc) -> Result<(), P::Error>
+                        where P: ListenerProcessor {
                     match *self {
                         $enum_name_head::$n_head(ref value) =>
                             value.process_all::<P>(acc)?,
@@ -618,8 +694,10 @@ mod tests {
     struct BogusOne;
     impl DOMNode for BogusOne {
         type Message = Never;
-        fn get_listener(&self, _index: usize) -> Option<&Listener<Self::Message>> { None }
         fn get_attribute(&self, _index: usize) -> Option<&KeyValue> { None }
+        fn process_listeners<P: ListenerProcessor>(&self, _acc: &mut P::Acc) -> Result<(), P::Error> {
+            Ok(())
+        }
         fn process_children<P: DOMNodeProcessor>(&self, _acc: &mut P::Acc) -> Result<(), P::Error> {
             Ok(())
         }
@@ -631,8 +709,10 @@ mod tests {
     struct BogusTwo;
     impl DOMNode for BogusTwo {
         type Message = Never;
-        fn get_listener(&self, _index: usize) -> Option<&Listener<Self::Message>> { None }
         fn get_attribute(&self, _index: usize) -> Option<&KeyValue> { None }
+        fn process_listeners<P: ListenerProcessor>(&self, _acc: &mut P::Acc) -> Result<(), P::Error> {
+            Ok(())
+        }
         fn process_children<P: DOMNodeProcessor>(&self, _acc: &mut P::Acc) -> Result<(), P::Error> {
             Ok(())
         }
