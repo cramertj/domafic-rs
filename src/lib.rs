@@ -12,6 +12,8 @@ use std::marker::PhantomData;
 /// `String` and `str` can be used to create HTML text nodes.
 pub trait DOMNode: Sized {
 
+    /// Type of message sent by a listener. Messages of this type should be used to update
+    /// application state.
     type Message;
 
     /// Get the nth listener for a given `DOMNode`.
