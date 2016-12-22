@@ -25,6 +25,10 @@ pub trait DOMNode: Sized {
         ListenerIter { node: self, index: 0, }
     }
 
+    fn with_listeners<L: AsRef<[Listener<Self::Message>]>>(self, listeners: L) -> WithListeners<Self, L> {
+        WithListeners { node: self, listeners: listeners, }
+    }
+
     /// Get the nth attribute for a given `DOMNode`.
     ///
     /// If `node.get_attribute(i)` returns `None`, `node.get_attribute(j)` should return `None`
@@ -96,6 +100,29 @@ impl<T, A> DOMNode for WithAttributes<T, A> where T: DOMNode, A: AsRef<[KeyValue
         attributes
             .get(index)
             .or_else(|| self.node.get_attribute(index - attributes.len()))
+    }
+    fn process_children<P: DOMNodeProcessor>(&self, _acc: &mut P::Acc) -> Result<(), P::Error> {
+        Ok(())
+    }
+    fn value<'a>(&'a self) -> DOMValue<'a> { self.node.value() }
+}
+
+// Wrapper type for `DOMNode`s that adds listeners.
+pub struct WithListeners<T: DOMNode, L: AsRef<[Listener<T::Message>]>> {
+    node: T,
+    listeners: L,
+}
+
+impl<T, L> DOMNode for WithListeners<T, L> where T: DOMNode, L: AsRef<[Listener<T::Message>]> {
+    type Message = T::Message;
+    fn get_listener(&self, index: usize) -> Option<&Listener<Self::Message>> {
+        let listeners = self.listeners.as_ref();
+        listeners
+            .get(index)
+            .or_else(|| self.node.get_listener(index - listeners.len()))
+    }
+    fn get_attribute(&self, index: usize) -> Option<&KeyValue> {
+        self.node.get_attribute(index)
     }
     fn process_children<P: DOMNodeProcessor>(&self, _acc: &mut P::Acc) -> Result<(), P::Error> {
         Ok(())
