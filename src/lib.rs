@@ -53,7 +53,7 @@ pub trait DOMNode: Sized {
     ///
     /// If processing any listener fails, processing is short-circuited (the remaining listeners
     /// will not be processed) and `process_listeners` returns an error.
-    fn process_listeners<P: ListenerProcessor>(&self, acc: &mut P::Acc) -> Result<(), P::Error>;
+    fn process_listeners<P: ListenerProcessor<Self::Message>>(&self, acc: &mut P::Acc) -> Result<(), P::Error>;
 
     /// Process the children of the node, modifying the accumulator `acc`.
     ///
@@ -93,7 +93,7 @@ impl<T, A> DOMNode for WithAttributes<T, A> where T: DOMNode, A: AsRef<[KeyValue
             .get(index)
             .or_else(|| self.node.get_attribute(index - attributes.len()))
     }
-    fn process_listeners<P: ListenerProcessor>(&self, acc: &mut P::Acc) -> Result<(), P::Error> {
+    fn process_listeners<P: ListenerProcessor<Self::Message>>(&self, acc: &mut P::Acc) -> Result<(), P::Error> {
         self.node.process_listeners::<P>(acc)
     }
     fn process_children<P: DOMNodeProcessor>(&self, _acc: &mut P::Acc) -> Result<(), P::Error> {
@@ -108,12 +108,12 @@ pub struct WithListeners<T: DOMNode, L: Listeners> {
     listeners: L,
 }
 
-impl<T, L> DOMNode for WithListeners<T, L> where T: DOMNode, L: Listeners {
+impl<T, L> DOMNode for WithListeners<T, L> where T: DOMNode, L: Listeners<Message=T::Message> {
     type Message = T::Message;
     fn get_attribute(&self, index: usize) -> Option<&KeyValue> {
         self.node.get_attribute(index)
     }
-    fn process_listeners<P: ListenerProcessor>(&self, acc: &mut P::Acc) -> Result<(), P::Error> {
+    fn process_listeners<P: ListenerProcessor<Self::Message>>(&self, acc: &mut P::Acc) -> Result<(), P::Error> {
         self.listeners.process_all::<P>(acc)?;
         self.node.process_listeners::<P>(acc)
     }
@@ -143,7 +143,7 @@ impl<'a, T: DOMNode> DOMNode for &'a T {
     fn get_attribute(&self, index: usize) -> Option<&KeyValue> {
         (*self).get_attribute(index)
     }
-    fn process_listeners<P: ListenerProcessor>(&self, acc: &mut P::Acc) -> Result<(), P::Error> {
+    fn process_listeners<P: ListenerProcessor<Self::Message>>(&self, acc: &mut P::Acc) -> Result<(), P::Error> {
         (*self).process_listeners::<P>(acc)
     }
     fn process_children<P: DOMNodeProcessor>(&self, acc: &mut P::Acc) -> Result<(), P::Error> {
@@ -183,7 +183,7 @@ impl<M> IntoNode<M> for &'static str {
 impl<M> DOMNode for StringNode<M> {
     type Message = M;
     fn get_attribute(&self, _index: usize) -> Option<&KeyValue> { None }
-    fn process_listeners<P: ListenerProcessor>(&self, _acc: &mut P::Acc) -> Result<(), P::Error> {
+    fn process_listeners<P: ListenerProcessor<Self::Message>>(&self, _acc: &mut P::Acc) -> Result<(), P::Error> {
         Ok(())
     }
     fn process_children<P: DOMNodeProcessor>(&self, _acc: &mut P::Acc) -> Result<(), P::Error> {
@@ -195,7 +195,7 @@ impl<M> DOMNode for StringNode<M> {
 impl<M> DOMNode for StringRefNode<M> {
     type Message = M;
     fn get_attribute(&self, _index: usize) -> Option<&KeyValue> { None }
-    fn process_listeners<P: ListenerProcessor>(&self, _acc: &mut P::Acc) -> Result<(), P::Error> {
+    fn process_listeners<P: ListenerProcessor<Self::Message>>(&self, _acc: &mut P::Acc) -> Result<(), P::Error> {
         Ok(())
     }
     fn process_children<P: DOMNodeProcessor>(&self, _acc: &mut P::Acc) -> Result<(), P::Error> {
@@ -272,7 +272,7 @@ pub mod tags {
         fn get_attribute(&self, index: usize) -> Option<&KeyValue> {
             self.attributes.as_ref().get(index)
         }
-        fn process_listeners<P: ListenerProcessor>(&self, acc: &mut P::Acc) -> Result<(), P::Error> {
+        fn process_listeners<P: ListenerProcessor<Self::Message>>(&self, acc: &mut P::Acc) -> Result<(), P::Error> {
             self.listeners.process_all::<P>(acc)
         }
         fn process_children<P: DOMNodeProcessor>(&self, acc: &mut P::Acc) -> Result<(), P::Error> {
@@ -353,7 +353,7 @@ pub trait Listener {
 /// `ListenerProcessor`s are used to iterate over `Listeners`s which may or may not be the same
 /// type. Implementations of this trait resemble traditional `fold` functions, modifying an
 /// accumulator (of type `Acc`) and returning an error as necessary.
-pub trait ListenerProcessor {
+pub trait ListenerProcessor<Message> {
 
     /// Type of the accumulator updated by `get_processor`
     type Acc;
@@ -364,12 +364,12 @@ pub trait ListenerProcessor {
     /// Returns a folding function capable of processing elements of type `T: DOMNode`.
     ///
     /// TODO: Example
-    fn get_processor<T: Listener>() -> fn(&mut Self::Acc, &T) -> Result<(), Self::Error>;
+    fn get_processor<T: Listener<Message=Message>>() -> fn(&mut Self::Acc, &T) -> Result<(), Self::Error>;
 }
 
 pub trait Listeners {
     type Message;
-    fn process_all<P: ListenerProcessor>(&self, acc: &mut P::Acc) -> Result<(), P::Error>;
+    fn process_all<P: ListenerProcessor<Self::Message>>(&self, acc: &mut P::Acc) -> Result<(), P::Error>;
 }
 
 pub mod events {
@@ -420,7 +420,7 @@ pub struct EmptyListeners<Message>(PhantomData<Message>);
 pub fn empty_listeners<Message>() -> EmptyListeners<Message> { EmptyListeners(PhantomData) }
 impl<M> Listeners for EmptyListeners<M> {
     type Message = M;
-    fn process_all<P: ListenerProcessor>(&self, _acc: &mut P::Acc) -> Result<(), P::Error> {
+    fn process_all<P: ListenerProcessor<Self::Message>>(&self, _acc: &mut P::Acc) -> Result<(), P::Error> {
         Ok(())
     }
 }
@@ -434,7 +434,7 @@ impl<T: DOMNode> DOMNodes for T {
 
 impl<T: Listener> Listeners for T {
     type Message = T::Message;
-    fn process_all<P: ListenerProcessor>(&self, acc: &mut P::Acc) -> Result<(), P::Error> {
+    fn process_all<P: ListenerProcessor<Self::Message>>(&self, acc: &mut P::Acc) -> Result<(), P::Error> {
         P::get_processor()(acc, self)
     }
 }
@@ -452,7 +452,7 @@ impl<T: DOMNodes> DOMNodes for Option<T> {
 
 impl<L: Listeners> Listeners for Option<L> {
     type Message = L::Message;
-    fn process_all<P: ListenerProcessor>(&self, acc: &mut P::Acc) -> Result<(), P::Error> {
+    fn process_all<P: ListenerProcessor<Self::Message>>(&self, acc: &mut P::Acc) -> Result<(), P::Error> {
         if let Some(ref inner) = *self {
             inner.process_all::<P>(acc)
         } else {
@@ -473,7 +473,7 @@ impl<T: DOMNodes> DOMNodes for [T] {
 
 impl<T: Listeners> Listeners for [T] {
     type Message = T::Message;
-    fn process_all<P: ListenerProcessor>(&self, acc: &mut P::Acc) -> Result<(), P::Error> {
+    fn process_all<P: ListenerProcessor<Self::Message>>(&self, acc: &mut P::Acc) -> Result<(), P::Error> {
         for x in self {
             x.process_all::<P>(acc)?;
         }
@@ -495,7 +495,7 @@ impl<T: DOMNodes> DOMNodes for Vec<T> {
 #[cfg(any(feature = "use_std", test))]
 impl<T: Listeners> Listeners for Vec<T> {
     type Message = T::Message;
-    fn process_all<P: ListenerProcessor>(&self, acc: &mut P::Acc) -> Result<(), P::Error> {
+    fn process_all<P: ListenerProcessor<Self::Message>>(&self, acc: &mut P::Acc) -> Result<(), P::Error> {
         for x in self {
             x.process_all::<P>(acc)?;
         }
@@ -517,7 +517,7 @@ macro_rules! array_impls {
 
         impl<T: Listeners> Listeners for [T; $len] {
             type Message = T::Message;
-            fn process_all<P: ListenerProcessor>(&self, acc: &mut P::Acc) -> Result<(), P::Error> {
+            fn process_all<P: ListenerProcessor<Self::Message>>(&self, acc: &mut P::Acc) -> Result<(), P::Error> {
                 for x in self {
                     x.process_all::<P>(acc)?;
                 }
@@ -577,7 +577,7 @@ macro_rules! tuple_impls {
         {
             type Message = $typ::Message;
             fn process_all<P>(&self, acc: &mut P::Acc) -> Result<(), P::Error>
-                    where P: ListenerProcessor {
+                    where P: ListenerProcessor<Self::Message> {
                 &self.$idx.process_all::<P>(acc)?;
                 $(
                     &self.$nidx.process_all::<P>(acc)?;
@@ -639,7 +639,7 @@ mod either_impls {
             {
                 type Message = $n_head::Message;
                 fn process_all<P>(&self, acc: &mut P::Acc) -> Result<(), P::Error>
-                        where P: ListenerProcessor {
+                        where P: ListenerProcessor<Self::Message> {
                     match *self {
                         $enum_name_head::$n_head(ref value) =>
                             value.process_all::<P>(acc)?,
@@ -719,7 +719,7 @@ mod tests {
     impl DOMNode for BogusOne {
         type Message = Never;
         fn get_attribute(&self, _index: usize) -> Option<&KeyValue> { None }
-        fn process_listeners<P: ListenerProcessor>(&self, _acc: &mut P::Acc) -> Result<(), P::Error> {
+        fn process_listeners<P: ListenerProcessor<Self::Message>>(&self, _acc: &mut P::Acc) -> Result<(), P::Error> {
             Ok(())
         }
         fn process_children<P: DOMNodeProcessor>(&self, _acc: &mut P::Acc) -> Result<(), P::Error> {
@@ -734,7 +734,7 @@ mod tests {
     impl DOMNode for BogusTwo {
         type Message = Never;
         fn get_attribute(&self, _index: usize) -> Option<&KeyValue> { None }
-        fn process_listeners<P: ListenerProcessor>(&self, _acc: &mut P::Acc) -> Result<(), P::Error> {
+        fn process_listeners<P: ListenerProcessor<Self::Message>>(&self, _acc: &mut P::Acc) -> Result<(), P::Error> {
             Ok(())
         }
         fn process_children<P: DOMNodeProcessor>(&self, _acc: &mut P::Acc) -> Result<(), P::Error> {
