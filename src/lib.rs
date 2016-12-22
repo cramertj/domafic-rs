@@ -41,10 +41,11 @@ pub trait DOMNode: Sized {
     /// Example:
     ///
     ///```rust
-    /// use domafic::DOMNode;
+    /// use domafic::{DOMNode, empty};
     /// use domafic::tags::div;
     ///
-    /// let my_div = div(());
+    /// type MessageType = (); // Type of messages sent in response to JS events
+    /// let my_div = div(empty::<MessageType>());
     /// let my_div_with_attrs = my_div.with_attributes([("key", "value")]);
     ///
     /// assert_eq!(my_div_with_attrs.get_attribute(0), Some(&("key", "value")));
@@ -367,8 +368,12 @@ pub trait DOMNodes {
     fn process_all<P: DOMNodeProcessor>(&self, acc: &mut P::Acc) -> Result<(), P::Error>;
 }
 
-impl DOMNodes for () {
-    type Message = ();
+
+#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq, Ord, PartialOrd)]
+pub struct EmptyNodes<Message>(PhantomData<Message>);
+pub fn empty<Message>() -> EmptyNodes<Message> { EmptyNodes(PhantomData) }
+impl<M> DOMNodes for EmptyNodes<M> {
+    type Message = M;
     fn process_all<P: DOMNodeProcessor>(&self, _acc: &mut P::Acc) -> Result<(), P::Error> {
         Ok(())
     }
@@ -583,7 +588,7 @@ mod tests {
 
     struct BogusOne;
     impl DOMNode for BogusOne {
-        type Message = ();
+        type Message = Never;
         fn get_listener(&self, _index: usize) -> Option<&Listener<Self::Message>> { None }
         fn get_attribute(&self, _index: usize) -> Option<&KeyValue> { None }
         fn process_children<P: DOMNodeProcessor>(&self, _acc: &mut P::Acc) -> Result<(), P::Error> {
@@ -596,7 +601,7 @@ mod tests {
 
     struct BogusTwo;
     impl DOMNode for BogusTwo {
-        type Message = ();
+        type Message = Never;
         fn get_listener(&self, _index: usize) -> Option<&Listener<Self::Message>> { None }
         fn get_attribute(&self, _index: usize) -> Option<&KeyValue> { None }
         fn process_children<P: DOMNodeProcessor>(&self, _acc: &mut P::Acc) -> Result<(), P::Error> {
@@ -623,7 +628,7 @@ mod tests {
         }
     }
 
-    fn html_sample() -> impl DOMNode {
+    fn html_sample() -> impl DOMNode<Message = Never> {
         div ((
             attributes([("attr", "value")]),
             (
@@ -632,21 +637,21 @@ mod tests {
             BogusTwo,
             table ((
                 "something".into_node(),
-                th (()),
-                tr (()),
-                tr (()),
+                th (empty()),
+                tr (empty()),
+                tr (empty()),
             )),
             )
         ))
     }
 
     #[cfg(feature = "use_either_n")]
-    fn html_either(include_rows: bool) -> impl DOMNode {
+    fn html_either(include_rows: bool) -> impl DOMNode<Message = Never> {
         div((
             table((
                 if include_rows {
                     Either2::One((
-                        tr(IntoNode::<()>::into_node("a")),
+                        tr("a".into_node()),
                         tr("b".into_node()),
                     ))
                 } else {
@@ -706,7 +711,7 @@ mod tests {
         (BogusOne, BogusOne,
             [BogusOne, BogusOne, BogusOne],
             [(BogusOne)],
-            vec![(), (), ()],
+            vec![empty(), empty(), empty()],
             [&BogusTwo, &BogusTwo, &BogusTwo],
         ).process_all::<ChildCounter>(&mut count).unwrap();
         assert_eq!(9, count);
@@ -764,14 +769,14 @@ mod tests {
 
     #[test]
     fn builds_attribute_list() {
-        let div1 = div(())
+        let div1 = div(empty::<Never>())
             .with_attributes([("attr2", "val2"), ("attr3", "val3")])
             .with_attributes([("attr1", "val1")]);
         check_attribute_list(div1);
 
         let div2 = div((
             attributes([("attr2", "val2"), ("attr3", "val3")]),
-            div(())
+            div(empty::<Never>())
         )).with_attributes([("attr1", "val1")]);
         check_attribute_list(div2);
     }
