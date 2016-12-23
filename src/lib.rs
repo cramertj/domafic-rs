@@ -13,7 +13,7 @@ pub mod html_writer;
 
 pub mod key_stack;
 pub mod listener;
-pub use listener::Listener;
+pub use listener::{Listener, on};
 pub mod processors;
 pub use processors::{DOMNodes, Listeners};
 pub mod tags;

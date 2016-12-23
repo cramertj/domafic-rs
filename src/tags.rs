@@ -1,10 +1,15 @@
+/// Tags, such as `div` or `table`.
+///
+/// To create a `Tag` DOMNode, simply import the tag function
+/// and call it with a type that implements `Into<TagProperties>`.
+///
+/// Example:
+///
+/// TODO
+
 use {DOMNode, DOMNodes, DOMValue, KeyValue, Listeners};
 use processors::{DOMNodeProcessor, ListenerProcessor};
 use empty::{empty_listeners, EmptyListeners};
-
-#[cfg(not(any(feature = "use_std", test)))]
-extern crate core as std;
-use std::marker::PhantomData;
 
 pub struct TagProperties<
     Children: DOMNodes,
@@ -19,6 +24,13 @@ pub struct TagProperties<
 
 type EmptyAttrs = [KeyValue; 0];
 
+pub fn attributes<A: AsRef<[KeyValue]>>(attrs: A) -> Attrs<A> {
+    Attrs(attrs)
+}
+
+pub struct Attrs<A: AsRef<[KeyValue]>>(A);
+
+// just children
 impl<C: DOMNodes> From<C> for TagProperties<C, EmptyAttrs, EmptyListeners<C::Message>> {
     fn from(nodes: C) -> TagProperties<C, EmptyAttrs, EmptyListeners<C::Message>> {
         TagProperties {
@@ -30,16 +42,7 @@ impl<C: DOMNodes> From<C> for TagProperties<C, EmptyAttrs, EmptyListeners<C::Mes
     }
 }
 
-pub fn attributes<A: AsRef<[KeyValue]>>(attrs: A) -> Attrs<A> {
-    Attrs(attrs)
-}
-pub fn listeners<M, L: Listeners<Message=M>>(listeners: L) -> Listens<M, L> {
-    Listens(listeners, PhantomData)
-}
-
-pub struct Attrs<A: AsRef<[KeyValue]>>(A);
-pub struct Listens<M, L: Listeners<Message=M>>(L, PhantomData<M>);
-
+// (attributes, children)
 impl<C: DOMNodes, A: AsRef<[KeyValue]>>
     From<(Attrs<A>, C)> for TagProperties<C, A, EmptyListeners<C::Message>>
 {
@@ -49,6 +52,48 @@ impl<C: DOMNodes, A: AsRef<[KeyValue]>>
             key: None,
             attributes: (props.0).0,
             listeners: empty_listeners(),
+        }
+    }
+}
+
+// (listeners, children)
+impl<C: DOMNodes, L: Listeners<Message=<C as DOMNodes>::Message>>
+    From<(L, C)> for TagProperties<C, EmptyAttrs, L>
+{
+    fn from(props: (L, C)) -> TagProperties<C, EmptyAttrs, L> {
+        TagProperties {
+            children: props.1,
+            key: None,
+            attributes: [],
+            listeners: props.0,
+        }
+    }
+}
+
+// (attributes, listeners, children)
+impl<C: DOMNodes, A: AsRef<[KeyValue]>, L: Listeners<Message=<C as DOMNodes>::Message>>
+    From<(Attrs<A>, L, C)> for TagProperties<C, A, L>
+{
+    fn from(props: (Attrs<A>, L, C)) -> TagProperties<C, A, L> {
+        TagProperties {
+            children: props.2,
+            key: None,
+            attributes: (props.0).0,
+            listeners: props.1,
+        }
+    }
+}
+
+// (listeners, attributes, children)
+impl<C: DOMNodes, A: AsRef<[KeyValue]>, L: Listeners<Message=<C as DOMNodes>::Message>>
+    From<(L, Attrs<A>, C)> for TagProperties<C, A, L>
+{
+    fn from(props: (L, Attrs<A>, C)) -> TagProperties<C, A, L> {
+        TagProperties {
+            children: props.2,
+            key: None,
+            attributes: (props.1).0,
+            listeners: props.0,
         }
     }
 }

@@ -1,7 +1,8 @@
-#![feature(conservative_impl_trait)]
 extern crate domafic;
 use domafic::{DOMNode, IntoNode};
 use domafic::tags::{div, button};
+use domafic::events::EventType::Click;
+use domafic::listener::on;
 
 type State = usize;
 
@@ -10,19 +11,23 @@ enum Msg {
     Decrement,
 }
 
-fn update(state: State, msg: Msg) -> State {
-    match msg {
+fn main() {
+    let update = |state: State, msg: Msg| match msg {
         Msg::Increment => state + 1,
         Msg::Decrement => state - 1,
-    }
-}
+    };
 
-fn render(state: State) -> impl DOMNode<Message=Msg> {
-    div ((
-        button (("-".into_node())),
-        button (("+".into_node())),
-    ))
-}
-
-fn main() {
+    let render = |state: State| {
+        div ((
+            button ((
+                on(Click, |_| Msg::Decrement),
+                "-".into_node(),
+            )),
+            state.to_string().into_node(),
+            button ((
+                on(Click, |_| Msg::Increment),
+                "+".into_node(),
+            )),
+        ))
+    };
 }

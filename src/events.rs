@@ -1,27 +1,15 @@
 pub enum EventType {
-    Mouse(MouseEventType),
-    Form(FormEventType),
-    Focus(FocusEventType),
-}
-
-pub enum MouseEventType {
     Click,
     DoubleClick,
-    Down,
-    Up,
-    Enter,
-    Leave,
-    Over,
-    Out,
-}
-
-pub enum FormEventType {
+    MouseDown,
+    MouseUp,
+    MouseEnter,
+    MouseLeave,
+    MouseOver,
+    MouseOut,
     Input,
     Check,
     Submit,
-}
-
-pub enum FocusEventType {
     Blur,
     Focus,
 }

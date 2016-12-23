@@ -7,15 +7,46 @@ use std::marker::PhantomData;
 
 pub trait Listener {
     type Message;
-    fn event_types_handled<'a>() -> &'a [events::EventType];
+    fn event_types_handled(&self) -> &[events::EventType];
     fn handle_event(&self, event: events::Event) -> Self::Message;
+}
+
+pub struct FnListener<M, A: AsRef<[events::EventType]>, F: Fn(events::Event) -> M> {
+    events_handled: A,
+    f: F,
+}
+
+impl<
+    M,
+    A: AsRef<[events::EventType]>,
+    F: Fn(events::Event) -> M> Listener for FnListener<M, A, F>
+{
+    type Message = M;
+    fn event_types_handled(&self) -> &[events::EventType] {
+        self.events_handled.as_ref()
+    }
+    fn handle_event(&self, event: events::Event) -> Self::Message {
+        (self.f)(event)
+    }
+}
+
+pub fn on<M, F: Fn(events::Event) -> M>
+    (event_type: events::EventType, f: F) -> FnListener<M, [events::EventType; 1], F>
+{
+    FnListener { events_handled: [event_type], f: f }
+}
+
+pub fn on_events<M, A: AsRef<[events::EventType]>, F: Fn(events::Event) -> M>
+    (events_handled: A, f: F) -> FnListener<M, A, F>
+{
+    FnListener { events_handled: events_handled, f: f }
 }
 
 pub struct MappedListener<'a, M, L: Listener + 'a, F: Map<L::Message, Out=M>>(&'a L, PhantomData<(M, F)>);
 impl<'a, M, L: Listener, F: Map<L::Message, Out=M>> Listener for MappedListener<'a, M, L, F> {
     type Message = M;
-    fn event_types_handled<'b>() -> &'b [events::EventType] {
-        L::event_types_handled()
+    fn event_types_handled(&self) -> &[events::EventType] {
+        self.0.event_types_handled()
     }
     fn handle_event(&self, event: events::Event) -> Self::Message {
         F::map(self.0.handle_event(event))
