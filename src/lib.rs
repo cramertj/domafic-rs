@@ -2,7 +2,7 @@
 #![cfg_attr(not(any(feature = "use_std", test)), no_std)]
 
 /// A `KeyValue` is a pair of static strings corresponding to a mapping between a key and a value.
-type KeyValue = (&'static str, &'static str);
+pub type KeyValue = (&'static str, &'static str);
 
 pub mod dom_node;
 pub use dom_node::{DOMNode, DOMValue, IntoNode};
@@ -18,6 +18,7 @@ pub mod processors;
 pub use processors::{DOMNodes, Listeners};
 pub mod tags;
 
+pub use empty::{empty};
 pub mod empty {
     #[cfg(not(any(feature = "use_std", test)))]
     extern crate core as std;
