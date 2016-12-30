@@ -4,11 +4,10 @@
 // unnecessary
 
 extern crate domafic;
-use domafic::{DOMNode, DOMNodes, DOMValue, IntoNode};
+use domafic::{DOMNode, DOMValue, IntoNode};
 use domafic::tags::{button, div, h1};
 use domafic::events::EventType::Click;
 use domafic::listener::on;
-use domafic::processors::DOMNodeProcessor;
 
 extern crate webplatform;
 
@@ -20,12 +19,12 @@ enum Msg {
 }
 
 fn main() {
-    let update = |state: State, msg: Msg| match msg {
-        Msg::Increment => state + 1,
-        Msg::Decrement => state - 1,
+    let update = |state: &mut State, msg: Msg| match msg {
+        Msg::Increment => *state += 1,
+        Msg::Decrement => *state -= 1,
     };
 
-    let render = |state: State| {
+    let render = |state: &State| {
         div ((
             h1("Hello from rust!".into_node()),
             button ((
@@ -40,16 +39,45 @@ fn main() {
         ))
     };
 
+    start("body", update, render, 0);
+}
+
+trait Updater<State, Message> {
+    fn update(&self, &mut State, Message) -> ();
+}
+impl<F, S, M> Updater<S, M> for F where F: Fn(&mut S, M) -> () {
+    fn update(&self, state: &mut S, msg: M) -> () {
+        (self)(state, msg)
+    }
+}
+
+trait Renderer<State> {
+    type Rendered: DOMNode;
+    fn render(&self, &State) -> Self::Rendered;
+}
+impl<F, S, R> Renderer<S> for F where F: Fn(&S) -> R, R: DOMNode {
+    type Rendered = R;
+    fn render(&self, state: &S) -> Self::Rendered {
+        (self)(state)
+    }
+}
+
+fn start<S, U, R>(element_selector: &str, updater: U, renderer: R, initial_state: S) -> !
+    where
+    U: Updater<S, <<R as Renderer<S>>::Rendered as DOMNode>::Message>,
+    R: Renderer<S>
+{
     let document = webplatform::init();
-    let body = document.element_query("body").unwrap();
-    render(0)
+    let body = document.element_query(element_selector).unwrap();
+    renderer.render(&initial_state)
         .process_all::<WebPlatformWriter>(&mut (&document, &body))
         .unwrap();
-
     webplatform::spin();
+    panic!("webplatform::spin() returned")
 }
 
 use std::marker::PhantomData;
+use domafic::processors::{DOMNodes, DOMNodeProcessor, Listeners, ListenerProcessor};
 use webplatform::{Document as WebDoc, HtmlNode as WebNode};
 pub struct WebPlatformWriter<'a, 'd: 'a, 'n: 'a>(PhantomData<(&'a (), &'d (), &'n ())>);
 impl<'a, 'd: 'a, 'n: 'a> DOMNodeProcessor for WebPlatformWriter<'a, 'd, 'n> {
