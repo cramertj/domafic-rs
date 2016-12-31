@@ -1,12 +1,9 @@
 use {DOMNode, Listener};
 
-// Note: without an extension to HTRBs, I don't know of a way to make the following traits generic
-// enough to prevent duplication (need to be able to be generic on the `DOMNode`/`Listener` bounds)
-
 /// `DOMNodeProcessor`s are used to iterate over `DOMNode`s which may or may not be the same type.
 /// Implementations of this trait resemble traditional `fold` functions, modifying an accumulator
 /// (of type `Acc`) and returning an error as necessary.
-pub trait DOMNodeProcessor {
+pub trait DOMNodeProcessor<Message> {
 
     /// Type of the accumulator updated by `get_processor`
     type Acc;
@@ -17,12 +14,13 @@ pub trait DOMNodeProcessor {
     /// Returns a folding function capable of processing elements of type `T: DOMNode`.
     ///
     /// TODO: Example
-    fn get_processor<T: DOMNode>() -> fn(&mut Self::Acc, &T) -> Result<(), Self::Error>;
+    fn get_processor<T: DOMNode<Message=Message>>()
+        -> fn(&mut Self::Acc, &T) -> Result<(), Self::Error>;
 }
 
 pub trait DOMNodes {
     type Message;
-    fn process_all<P: DOMNodeProcessor>(&self, acc: &mut P::Acc) -> Result<(), P::Error>;
+    fn process_all<P: DOMNodeProcessor<Self::Message>>(&self, acc: &mut P::Acc) -> Result<(), P::Error>;
 }
 
 /// `ListenerProcessor`s are used to iterate over `Listeners`s which may or may not be the same
@@ -49,7 +47,7 @@ pub trait Listeners {
 
 impl<T: DOMNode> DOMNodes for T {
     type Message = T::Message;
-    fn process_all<P: DOMNodeProcessor>(&self, acc: &mut P::Acc) -> Result<(), P::Error> {
+    fn process_all<P: DOMNodeProcessor<Self::Message>>(&self, acc: &mut P::Acc) -> Result<(), P::Error> {
         P::get_processor()(acc, self)
     }
 }
@@ -59,11 +57,15 @@ impl<T: Listener> Listeners for T {
     fn process_all<P: ListenerProcessor<Self::Message>>(&self, acc: &mut P::Acc) -> Result<(), P::Error> {
         P::get_processor()(acc, self)
     }
+
+    // TODO once type ATCs land
+    // type Mapped<Mapper: Map<In=Self::Message>>: Listeners<Message=Mapper::Out>
+    // fn map<Mapper: Map<In=Self::Message>>(self) -> Mapped<Mapper>
 }
 
 impl<T: DOMNodes> DOMNodes for Option<T> {
     type Message = T::Message;
-    fn process_all<P: DOMNodeProcessor>(&self, acc: &mut P::Acc) -> Result<(), P::Error> {
+    fn process_all<P: DOMNodeProcessor<Self::Message>>(&self, acc: &mut P::Acc) -> Result<(), P::Error> {
         if let Some(ref inner) = *self {
             inner.process_all::<P>(acc)
         } else {
@@ -85,7 +87,7 @@ impl<L: Listeners> Listeners for Option<L> {
 
 impl<T: DOMNodes> DOMNodes for [T] {
     type Message = T::Message;
-    fn process_all<P: DOMNodeProcessor>(&self, acc: &mut P::Acc) -> Result<(), P::Error> {
+    fn process_all<P: DOMNodeProcessor<Self::Message>>(&self, acc: &mut P::Acc) -> Result<(), P::Error> {
         for x in self {
             x.process_all::<P>(acc)?;
         }
@@ -106,7 +108,7 @@ impl<T: Listeners> Listeners for [T] {
 #[cfg(any(feature = "use_std", test))]
 impl<T: DOMNodes> DOMNodes for Vec<T> {
     type Message = T::Message;
-    fn process_all<P: DOMNodeProcessor>(&self, acc: &mut P::Acc) -> Result<(), P::Error> {
+    fn process_all<P: DOMNodeProcessor<Self::Message>>(&self, acc: &mut P::Acc) -> Result<(), P::Error> {
         for x in self {
             x.process_all::<P>(acc)?;
         }
@@ -129,7 +131,7 @@ macro_rules! array_impls {
     ($($len:expr,)*) => { $(
         impl<T: DOMNodes> DOMNodes for [T; $len] {
             type Message = T::Message;
-            fn process_all<P: DOMNodeProcessor>(&self, acc: &mut P::Acc) -> Result<(), P::Error> {
+            fn process_all<P: DOMNodeProcessor<Self::Message>>(&self, acc: &mut P::Acc) -> Result<(), P::Error> {
                 for x in self {
                     x.process_all::<P>(acc)?;
                 }
@@ -184,7 +186,7 @@ macro_rules! tuple_impls {
         {
             type Message = $typ::Message;
             fn process_all<P>(&self, acc: &mut P::Acc) -> Result<(), P::Error>
-                    where P: DOMNodeProcessor {
+                    where P: DOMNodeProcessor<Self::Message> {
                 &self.$idx.process_all::<P>(acc)?;
                 $(
                     &self.$nidx.process_all::<P>(acc)?;
@@ -242,7 +244,7 @@ mod either_impls {
             {
                 type Message = $n_head::Message;
                 fn process_all<P>(&self, acc: &mut P::Acc) -> Result<(), P::Error>
-                        where P: DOMNodeProcessor {
+                        where P: DOMNodeProcessor<Self::Message> {
                     match *self {
                         $enum_name_head::$n_head(ref value) =>
                             value.process_all::<P>(acc)?,

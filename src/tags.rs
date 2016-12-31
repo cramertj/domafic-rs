@@ -8,7 +8,6 @@
 /// TODO
 
 use {DOMNode, DOMNodes, DOMValue, KeyValue, Listeners};
-use processors::{DOMNodeProcessor, ListenerProcessor};
 use empty::{empty_listeners, EmptyListeners};
 
 pub struct TagProperties<
@@ -112,15 +111,34 @@ pub struct Tag<
 
 impl<C: DOMNodes, A: AsRef<[KeyValue]>, L: Listeners<Message=C::Message>> DOMNode for Tag<C, A, L> {
     type Message = C::Message;
+    type Children = C;
+    type Listeners = L;
+    type WithoutListeners = Tag<C, A, EmptyListeners<Self::Message>>;
     fn key(&self) -> Option<usize> { self.key }
     fn get_attribute(&self, index: usize) -> Option<&KeyValue> {
         self.attributes.as_ref().get(index)
     }
-    fn process_listeners<P: ListenerProcessor<Self::Message>>(&self, acc: &mut P::Acc) -> Result<(), P::Error> {
-        self.listeners.process_all::<P>(acc)
+    fn children(&self) -> &Self::Children {
+        &self.children
     }
-    fn process_children<P: DOMNodeProcessor>(&self, acc: &mut P::Acc) -> Result<(), P::Error> {
-        self.children.process_all::<P>(acc)
+    fn listeners(&self) -> &Self::Listeners {
+        &self.listeners
+    }
+    fn children_and_listeners(&self) -> (&Self::Children, &Self::Listeners) {
+        (&self.children, &self.listeners)
+    }
+    fn split_listeners(self) -> (Self::WithoutListeners, Self::Listeners) {
+        let Tag { tagname, children, key, attributes, listeners } = self;
+        (
+            Tag {
+                tagname: tagname,
+                children: children,
+                key: key,
+                attributes: attributes,
+                listeners: empty_listeners()
+            },
+            listeners
+        )
     }
     fn value<'a>(&'a self) -> DOMValue<'a> {
         DOMValue::Element {

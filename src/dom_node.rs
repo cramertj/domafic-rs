@@ -1,11 +1,6 @@
-use processors::{DOMNodeProcessor, ListenerProcessor};
-use {Listeners, KeyValue};
-use listener::{Map, MappedListenerProcessor};
-
-#[cfg(not(any(feature = "use_std", test)))]
-extern crate core as std;
-
-use std::marker::PhantomData;
+use processors::{DOMNodes, Listeners};
+use KeyValue;
+use empty::{empty, empty_listeners, EmptyNodes, EmptyListeners};
 
 /// A `DOMNode` specifies the HTML DOM (Document Object Model) representation of a type.
 ///
@@ -16,6 +11,14 @@ pub trait DOMNode: Sized {
     /// Type of message sent by a listener. Messages of this type should be used to update
     /// application state.
     type Message;
+    type Children: DOMNodes<Message=Self::Message>;
+    type Listeners: Listeners<Message=Self::Message>;
+    type WithoutListeners:
+        DOMNode<
+            Message=Self::Message,
+            Children=Self::Children,
+            Listeners=EmptyListeners<Self::Message>
+            >;
 
     /// If present, the key will be included in the `KeyStack` returned alongside a message.
     /// This should be used to differentiate messages from peer `DOMNode`s.
@@ -56,27 +59,20 @@ pub trait DOMNode: Sized {
         WithAttributes { node: self, attributes: attributes, }
     }
 
-    fn with_listeners<L: Listeners>(self, listeners: L) -> WithListeners<Self, L> {
-        WithListeners { node: self, listeners: listeners, }
+    fn with_listeners<L: Listeners<Message=Self::Message>>(self, listeners: L) ->
+            WithListeners<Self::WithoutListeners, (L, Self::Listeners)> {
+        let (without_listeners, old_listeners) = self.split_listeners();
+        WithListeners { node: without_listeners, listeners: (listeners, old_listeners), }
     }
 
-    fn map_listeners<NewMessage, M: Map<Self::Message, Out=NewMessage>>(self)
-        -> WithMessageMap<Self, NewMessage, M>
-    {
-        WithMessageMap(self, PhantomData)
-    }
+    // TODO once type ATCs land
+    // type Mapped<Mapper: Map<In=Self::Message>>: DOMNode<Message=Mapper::Out>
+    // fn map_listeners<Mapper: Map<In=Self::Message>>(self) -> Mapped<Mapper>
 
-    /// Process the listeners of the node, modifying the accumulator `acc`.
-    ///
-    /// If processing any listener fails, processing is short-circuited (the remaining listeners
-    /// will not be processed) and `process_listeners` returns an error.
-    fn process_listeners<P: ListenerProcessor<Self::Message>>(&self, acc: &mut P::Acc) -> Result<(), P::Error>;
-
-    /// Process the children of the node, modifying the accumulator `acc`.
-    ///
-    /// If processing any child fails, processing is short-circuited (the remaining children will
-    /// not be processed) and `process_children` returns an error.
-    fn process_children<P: DOMNodeProcessor>(&self, acc: &mut P::Acc) -> Result<(), P::Error>;
+    fn children(&self) -> &Self::Children;
+    fn listeners(&self) -> &Self::Listeners;
+    fn children_and_listeners(&self) -> (&Self::Children, &Self::Listeners);
+    fn split_listeners(self) -> (Self::WithoutListeners, Self::Listeners);
 
     /// Returns an enum representing either the node's HTML tag or, in the case of a text node,
     /// the node's text value.
@@ -96,35 +92,26 @@ pub enum DOMValue<'a> {
 pub struct WithKey<T: DOMNode>(T, usize);
 impl<T: DOMNode> DOMNode for WithKey<T> {
     type Message = T::Message;
+    type Children = T::Children;
+    type Listeners = T::Listeners;
+    type WithoutListeners = WithKey<T::WithoutListeners>;
+
     fn key(&self) -> Option<usize> { Some(self.1) }
     fn get_attribute(&self, index: usize) -> Option<&KeyValue> {
         self.0.get_attribute(index)
     }
-    fn process_listeners<P: ListenerProcessor<Self::Message>>(&self, acc: &mut P::Acc) -> Result<(), P::Error> {
-        self.0.process_listeners::<P>(acc)
+    fn children(&self) -> &Self::Children {
+        self.0.children()
     }
-    fn process_children<P: DOMNodeProcessor>(&self, acc: &mut P::Acc) -> Result<(), P::Error> {
-        self.0.process_children::<P>(acc)
+    fn listeners(&self) -> &Self::Listeners {
+        self.0.listeners()
     }
-    fn value<'a>(&'a self) -> DOMValue<'a> { self.0.value() }
-}
-
-pub struct WithMessageMap<T: DOMNode, NewMessage, M: Map<T::Message, Out=NewMessage>>
-    (T, PhantomData<(NewMessage, M)>);
-
-impl<T: DOMNode, NewMessage, MapM: Map<T::Message, Out=NewMessage>> DOMNode for
-    WithMessageMap<T, NewMessage, MapM>
-{
-    type Message = NewMessage;
-    fn key(&self) -> Option<usize> { self.0.key() }
-    fn get_attribute(&self, index: usize) -> Option<&KeyValue> {
-        self.0.get_attribute(index)
+    fn children_and_listeners(&self) -> (&Self::Children, &Self::Listeners) {
+        self.0.children_and_listeners()
     }
-    fn process_listeners<P: ListenerProcessor<Self::Message>>(&self, acc: &mut P::Acc) -> Result<(), P::Error> {
-        self.0.process_listeners::<MappedListenerProcessor<NewMessage, T::Message, P, MapM>>(acc)
-    }
-    fn process_children<P: DOMNodeProcessor>(&self, acc: &mut P::Acc) -> Result<(), P::Error> {
-        self.0.process_children::<P>(acc)
+    fn split_listeners(self) -> (Self::WithoutListeners, Self::Listeners) {
+        let (node, listeners) = self.0.split_listeners();
+        (WithKey(node, self.1), listeners)
     }
     fn value<'a>(&'a self) -> DOMValue<'a> { self.0.value() }
 }
@@ -137,6 +124,9 @@ pub struct WithAttributes<T: DOMNode, A: AsRef<[KeyValue]>> {
 
 impl<T, A> DOMNode for WithAttributes<T, A> where T: DOMNode, A: AsRef<[KeyValue]> {
     type Message = T::Message;
+    type Children = T::Children;
+    type Listeners = T::Listeners;
+    type WithoutListeners = WithAttributes<T::WithoutListeners, A>;
     fn key(&self) -> Option<usize> { self.node.key() }
     fn get_attribute(&self, index: usize) -> Option<&KeyValue> {
         let attributes = self.attributes.as_ref();
@@ -144,35 +134,56 @@ impl<T, A> DOMNode for WithAttributes<T, A> where T: DOMNode, A: AsRef<[KeyValue
             .get(index)
             .or_else(|| self.node.get_attribute(index - attributes.len()))
     }
-    fn process_listeners<P: ListenerProcessor<Self::Message>>(&self, acc: &mut P::Acc) -> Result<(), P::Error> {
-        self.node.process_listeners::<P>(acc)
+    fn children(&self) -> &Self::Children {
+        self.node.children()
     }
-    fn process_children<P: DOMNodeProcessor>(&self, acc: &mut P::Acc) -> Result<(), P::Error> {
-        self.node.process_children::<P>(acc)
+    fn listeners(&self) -> &Self::Listeners {
+        self.node.listeners()
+    }
+    fn children_and_listeners(&self) -> (&Self::Children, &Self::Listeners) {
+        self.node.children_and_listeners()
+    }
+    fn split_listeners(self) -> (Self::WithoutListeners, Self::Listeners) {
+        let (node, listeners) = self.node.split_listeners();
+        (
+            WithAttributes {
+                node: node,
+                attributes: self.attributes,
+            },
+            listeners
+        )
     }
     fn value<'a>(&'a self) -> DOMValue<'a> { self.node.value() }
 }
 
 /// Wrapper for `DOMNode`s that adds listeners.
-pub struct WithListeners<T: DOMNode, L: Listeners> {
+pub struct WithListeners<T: DOMNode<Message=L::Message, Listeners=EmptyListeners<L::Message>>, L: Listeners> {
     node: T,
     listeners: L,
 }
 
-impl<T, L> DOMNode for WithListeners<T, L> where T: DOMNode, L: Listeners<Message=T::Message> {
-    type Message = T::Message;
+impl<T, L> DOMNode for WithListeners<T, L>
+    where T: DOMNode<Message=L::Message, Listeners=EmptyListeners<L::Message>>, L: Listeners
+{
+    type Message = L::Message;
+    type Children = T::Children;
+    type Listeners = L;
+    type WithoutListeners = T;
     fn key(&self) -> Option<usize> { self.node.key() }
     fn get_attribute(&self, index: usize) -> Option<&KeyValue> {
         self.node.get_attribute(index)
     }
-    fn process_listeners<P: ListenerProcessor<Self::Message>>
-        (&self, acc: &mut P::Acc) -> Result<(), P::Error>
-    {
-        self.listeners.process_all::<P>(acc)?;
-        self.node.process_listeners::<P>(acc)
+    fn children(&self) -> &Self::Children {
+        self.node.children()
     }
-    fn process_children<P: DOMNodeProcessor>(&self, acc: &mut P::Acc) -> Result<(), P::Error> {
-        self.node.process_children::<P>(acc)
+    fn listeners(&self) -> &Self::Listeners {
+        &self.listeners
+    }
+    fn children_and_listeners(&self) -> (&Self::Children, &Self::Listeners) {
+        (&self.node.children(), &self.listeners)
+    }
+    fn split_listeners(self) -> (Self::WithoutListeners, Self::Listeners) {
+        (self.node, self.listeners)
     }
     fn value<'a>(&'a self) -> DOMValue<'a> { self.node.value() }
 }
@@ -192,20 +203,28 @@ impl<'a, T: DOMNode> Iterator for AttributeIter<'a, T> {
     }
 }
 
+/*
 impl<'a, T: DOMNode> DOMNode for &'a T {
     type Message = T::Message;
+    type Children = T::Children;
+    type Listeners = T::Listeners;
+    type WithoutListeners = T::WithoutListeners;
     fn key(&self) -> Option<usize> { (*self).key() }
     fn get_attribute(&self, index: usize) -> Option<&KeyValue> {
         (*self).get_attribute(index)
     }
-    fn process_listeners<P: ListenerProcessor<Self::Message>>(&self, acc: &mut P::Acc) -> Result<(), P::Error> {
-        (*self).process_listeners::<P>(acc)
+    fn children(&self) -> &Self::Children {
+        (*self).children()
     }
-    fn process_children<P: DOMNodeProcessor>(&self, acc: &mut P::Acc) -> Result<(), P::Error> {
-        (*self).process_children::<P>(acc)
+    fn listeners(&self) -> &Self::Listeners {
+        (*self).listeners()
+    }
+    fn children_and_listeners(&self) -> (&Self::Children, &Self::Listeners) {
+        (*self).children_and_listeners()
     }
     fn value<'b>(&'b self) -> DOMValue<'b> { (*self).value() }
 }
+*/
 
 pub trait IntoNode<M> {
     type Node: DOMNode<Message = M>;
@@ -214,10 +233,10 @@ pub trait IntoNode<M> {
 
 #[cfg(any(feature = "use_std", test))]
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
-pub struct StringNode<Message>(String, PhantomData<Message>);
+pub struct StringNode<Message>(String, EmptyNodes<Message>, EmptyListeners<Message>);
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
-pub struct StringRefNode<Message>(&'static str, PhantomData<Message>);
+pub struct StringRefNode<Message>(&'static str, EmptyNodes<Message>, EmptyListeners<Message>);
 
 #[cfg(any(feature = "use_std", test))]
 impl<M> IntoNode<M> for String {
@@ -237,35 +256,53 @@ impl<M> IntoNode<M> for &'static str {
 #[cfg(any(feature = "use_std", test))]
 impl<M> DOMNode for StringNode<M> {
     type Message = M;
+    type Children = EmptyNodes<M>;
+    type Listeners = EmptyListeners<M>;
+    type WithoutListeners = Self;
     fn key(&self) -> Option<usize> { None }
     fn get_attribute(&self, _index: usize) -> Option<&KeyValue> { None }
-    fn process_listeners<P: ListenerProcessor<Self::Message>>(&self, _acc: &mut P::Acc) -> Result<(), P::Error> {
-        Ok(())
+    fn children(&self) -> &Self::Children {
+        &self.1
     }
-    fn process_children<P: DOMNodeProcessor>(&self, _acc: &mut P::Acc) -> Result<(), P::Error> {
-        Ok(())
+    fn listeners(&self) -> &Self::Listeners {
+        &self.2
+    }
+    fn children_and_listeners(&self) -> (&Self::Children, &Self::Listeners) {
+        (&self.1, &self.2)
+    }
+    fn split_listeners(self) -> (Self::WithoutListeners, Self::Listeners) {
+        (self, empty_listeners())
     }
     fn value<'a>(&'a self) -> DOMValue<'a> { DOMValue::Text(&self.0) }
 }
 
 impl<M> DOMNode for StringRefNode<M> {
     type Message = M;
+    type Children = EmptyNodes<M>;
+    type Listeners = EmptyListeners<M>;
+    type WithoutListeners = Self;
     fn key(&self) -> Option<usize> { None }
     fn get_attribute(&self, _index: usize) -> Option<&KeyValue> { None }
-    fn process_listeners<P: ListenerProcessor<Self::Message>>(&self, _acc: &mut P::Acc) -> Result<(), P::Error> {
-        Ok(())
+    fn children(&self) -> &Self::Children {
+        &self.1
     }
-    fn process_children<P: DOMNodeProcessor>(&self, _acc: &mut P::Acc) -> Result<(), P::Error> {
-        Ok(())
+    fn listeners(&self) -> &Self::Listeners {
+        &self.2
+    }
+    fn children_and_listeners(&self) -> (&Self::Children, &Self::Listeners) {
+        (&self.1, &self.2)
+    }
+    fn split_listeners(self) -> (Self::WithoutListeners, Self::Listeners) {
+        (self, empty_listeners())
     }
     fn value<'a>(&'a self) -> DOMValue<'a> { DOMValue::Text(self.0) }
 }
 
 #[cfg(any(feature = "use_std", test))]
 impl<Message> From<String> for StringNode<Message> {
-    fn from(string: String) -> Self { StringNode(string, PhantomData) }
+    fn from(string: String) -> Self { StringNode(string, empty(), empty_listeners()) }
 }
 
 impl<Message> From<&'static str> for StringRefNode<Message> {
-    fn from(string: &'static str) -> Self { StringRefNode(string, PhantomData) }
+    fn from(string: &'static str) -> Self { StringRefNode(string, empty(), empty_listeners()) }
 }

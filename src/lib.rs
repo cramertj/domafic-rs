@@ -31,7 +31,7 @@ pub mod empty {
     pub fn empty<Message>() -> EmptyNodes<Message> { EmptyNodes(PhantomData) }
     impl<M> DOMNodes for EmptyNodes<M> {
         type Message = M;
-        fn process_all<P: DOMNodeProcessor>(&self, _acc: &mut P::Acc) -> Result<(), P::Error> {
+        fn process_all<P: DOMNodeProcessor<M>>(&self, _acc: &mut P::Acc) -> Result<(), P::Error> {
             Ok(())
         }
     }
@@ -95,7 +95,7 @@ mod tests {
     struct ChildCounter;
     #[derive(Debug, Clone, Copy)]
     enum Never {}
-    impl DOMNodeProcessor for ChildCounter {
+    impl<M> DOMNodeProcessor<M> for ChildCounter {
         type Acc = usize;
         type Error = Never;
 

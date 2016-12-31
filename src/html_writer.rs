@@ -1,11 +1,11 @@
-use {DOMNode, DOMValue};
+use {DOMNode, DOMNodes, DOMValue};
 use processors::DOMNodeProcessor;
 
 use std::marker::PhantomData;
 use std::io;
 
 pub struct HtmlWriter<W: io::Write>(PhantomData<W>);
-impl<W: io::Write> DOMNodeProcessor for HtmlWriter<W> {
+impl<M, W: io::Write> DOMNodeProcessor<M> for HtmlWriter<W> {
     type Acc = W;
     type Error = io::Error;
 
@@ -19,7 +19,7 @@ impl<W: io::Write> DOMNodeProcessor for HtmlWriter<W> {
                         write!(w, " {}=\"{}\"", attr.0, attr.1)?;
                     }
                     write!(w, ">")?;
-                    node.process_children::<HtmlWriter<W>>(w)?;
+                    node.children().process_all::<HtmlWriter<W>>(w)?;
                     write!(w, "</{}>", tagname)?;
                 }
                 DOMValue::Text(text) => {
