@@ -5,7 +5,7 @@ use std::marker::PhantomData;
 use std::io;
 
 pub struct HtmlWriter<W: io::Write>(PhantomData<W>);
-impl<M, W: io::Write> DOMNodeProcessor<M> for HtmlWriter<W> {
+impl<'a, M, W: io::Write> DOMNodeProcessor<'a, M> for HtmlWriter<W> {
     type Acc = W;
     type Error = io::Error;
 

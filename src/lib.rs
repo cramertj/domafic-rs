@@ -31,7 +31,7 @@ pub mod empty {
     pub fn empty<Message>() -> EmptyNodes<Message> { EmptyNodes(PhantomData) }
     impl<M> DOMNodes for EmptyNodes<M> {
         type Message = M;
-        fn process_all<P: DOMNodeProcessor<M>>(&self, _acc: &mut P::Acc) -> Result<(), P::Error> {
+        fn process_all<'a, P: DOMNodeProcessor<'a, M>>(&'a self, _acc: &mut P::Acc) -> Result<(), P::Error> {
             Ok(())
         }
     }
@@ -41,7 +41,7 @@ pub mod empty {
     pub fn empty_listeners<Message>() -> EmptyListeners<Message> { EmptyListeners(PhantomData) }
     impl<M> Listeners for EmptyListeners<M> {
         type Message = M;
-        fn process_all<P: ListenerProcessor<Self::Message>>(&self, _acc: &mut P::Acc) -> Result<(), P::Error> {
+        fn process_all<'a, P: ListenerProcessor<'a, Self::Message>>(&self, _acc: &mut P::Acc) -> Result<(), P::Error> {
             Ok(())
         }
     }

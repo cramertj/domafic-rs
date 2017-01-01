@@ -73,15 +73,23 @@ fn run<U, R, S>(element_selector: &str, updater: U, renderer: R, initial_state: 
 
     // Lives forever on the stack, referenced and mutated in callbacks
     let mut app_system = (updater, renderer, initial_state);
-    app_system.1.render(&app_system.2)
-        .process_all::<WebPlatformWriter<U, R, S>>(&mut (&mut app_system as *mut (U, R, S), &document, &body))
-        .unwrap();
+    let app_system_mut_ref = &mut app_system;
+    let app_system_mut_ptr = app_system_mut_ref as *mut (U, R, S);
 
-    webplatform::spin();
+    unsafe {
+        (*app_system_mut_ptr).1.render(&(*app_system_mut_ptr).2)
+            .process_all::<WebPlatformWriter<U, R, S>>(
+                &mut (app_system_mut_ptr, &document, &body)
+            )
+            .unwrap();
+
+        webplatform::spin();
+    }
 
     // Prevent boxed_system from being freed so it can be used in callbacks
     // (drop occurs after system loop, aka never)
-    std::mem::drop(app_system);
+    std::mem::drop(app_system_mut_ptr);
+    std::mem::drop(app_system_mut_ref);
 
     panic!("webplatform::spin() returned");
 }
@@ -96,7 +104,7 @@ type MessageOfR<R: Renderer<S>, S> = <<R as Renderer<S>>::Rendered as DOMNode>::
 struct WebPlatformWriter<'a, 'd: 'a, 'n: 'a, U, R, S>(
     PhantomData<(&'a (), &'d (), &'n (), U, R, S)>
 );
-impl<'a, 'd: 'a, 'n: 'a, U, R, S> DOMNodeProcessor<MessageOfR<R, S>> for WebPlatformWriter<'a, 'd, 'n, U, R, S>
+impl<'a, 'd: 'a, 'n: 'a, U, R, S> DOMNodeProcessor<'a, MessageOfR<R, S>> for WebPlatformWriter<'a, 'd, 'n, U, R, S>
     where
     U: Updater<S, MessageOfR<R, S>>,
     R: Renderer<S>
@@ -104,7 +112,7 @@ impl<'a, 'd: 'a, 'n: 'a, U, R, S> DOMNodeProcessor<MessageOfR<R, S>> for WebPlat
     type Acc = (*mut (U, R, S), &'a WebDoc<'d>, &'a WebNode<'n>);
     type Error = ();
 
-    fn get_processor<T: DOMNode<Message=MessageOfR<R, S>>>() -> fn(&mut Self::Acc, &T) -> Result<(), Self::Error> {
+    fn get_processor<T: DOMNode<Message=MessageOfR<R, S>>>() -> fn(&mut Self::Acc, &'a T) -> Result<(), Self::Error> {
 
         // Private to this function because it's actually unsafe to use, but there's
         // currently no way to make it unsafe to use a safe trait, and we need to use
@@ -117,7 +125,7 @@ impl<'a, 'd: 'a, 'n: 'a, U, R, S> DOMNodeProcessor<MessageOfR<R, S>> for WebPlat
         (
             PhantomData<(&'a (), &'n (), U, R, S)>
         );
-        impl<'a, 'n: 'a, U, R, S> ListenerProcessor<MessageOfR<R, S>> for
+        impl<'a, 'n: 'a, U, R, S> ListenerProcessor<'a, MessageOfR<R, S>> for
             WebPlatformListenerWriter<'a, 'n, U, R, S>
             where
             U: Updater<S, MessageOfR<R, S>>,
@@ -126,10 +134,10 @@ impl<'a, 'd: 'a, 'n: 'a, U, R, S> DOMNodeProcessor<MessageOfR<R, S>> for WebPlat
             type Acc = (*mut (U, R, S), &'a WebNode<'n>);
             type Error = ();
 
-            fn get_processor<L: Listener<Message=MessageOfR<R, S>>>() -> fn(&mut Self::Acc, &L) -> Result<(), Self::Error> {
+            fn get_processor<L: Listener<Message=MessageOfR<R, S>>>() -> fn(&mut Self::Acc, &'a L) -> Result<(), Self::Error> {
                 fn add_listener<'a, 'n, U, R, S, L> (
                     acc: &mut (*mut (U, R, S), &'a WebNode<'n>),
-                    listener: &L) -> Result<(), ()> where L: Listener
+                    listener: &'a L) -> Result<(), ()> where L: Listener
                 {
                     let (ref boxed_system_ptr_ref, ref node) = *acc;
                     let boxed_system_ptr: *mut (U, R, S) =
