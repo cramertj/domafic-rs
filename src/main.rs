@@ -68,28 +68,30 @@ fn run<U, R, S>(element_selector: &str, updater: U, renderer: R, initial_state: 
     U: Updater<S, <<R as Renderer<S>>::Rendered as DOMNode>::Message>,
     R: Renderer<S>
 {
-    let document = webplatform::init();
-    let body = document.element_query(element_selector).unwrap();
-
-    // Lives forever on the stack, referenced and mutated in callbacks
-    let mut app_system = (updater, renderer, initial_state);
-    let app_system_mut_ref = &mut app_system;
-    let app_system_mut_ptr = app_system_mut_ref as *mut (U, R, S);
 
     unsafe {
-        (*app_system_mut_ptr).1.render(&(*app_system_mut_ptr).2)
-            .process_all::<WebPlatformWriter<U, R, S>>(
-                &mut (app_system_mut_ptr, &document, &body)
-            )
-            .unwrap();
+        // Lives forever on the stack, referenced and mutated in callbacks
+        let mut app_system = (updater, renderer, initial_state);
+        let app_system_mut_ref = &mut app_system;
+        let app_system_mut_ptr = app_system_mut_ref as *mut (U, R, S);
+
+        // Borrow only used to draw initial DOM to browser
+        let new_app_system_mut_ref = &mut (*app_system_mut_ptr);
+
+        // Get initial DOMNode
+        let rendered = new_app_system_mut_ref.1.render(&(new_app_system_mut_ref).2);
+
+        // Initialize the browser system
+        let document = webplatform::init();
+        let body = document.element_query(element_selector).unwrap();
+
+        // Draw initial DOMNode to browser
+        rendered.process_all::<WebPlatformWriter<U, R, S>>(
+            &mut (app_system_mut_ptr, &document, &body)
+        ).unwrap();
 
         webplatform::spin();
     }
-
-    // Prevent boxed_system from being freed so it can be used in callbacks
-    // (drop occurs after system loop, aka never)
-    std::mem::drop(app_system_mut_ptr);
-    std::mem::drop(app_system_mut_ref);
 
     panic!("webplatform::spin() returned");
 }
@@ -101,43 +103,43 @@ use webplatform::{Document as WebDoc, HtmlNode as WebNode};
 
 type MessageOfR<R: Renderer<S>, S> = <<R as Renderer<S>>::Rendered as DOMNode>::Message;
 
-struct WebPlatformWriter<'a, 'd: 'a, 'n: 'a, U, R, S>(
-    PhantomData<(&'a (), &'d (), &'n (), U, R, S)>
+struct WebPlatformWriter<'a, 'd, U:'d, R:'d, S:'d>(
+    PhantomData<(&'a (), &'d (), U, R, S)>
 );
-impl<'a, 'd: 'a, 'n: 'a, U, R, S> DOMNodeProcessor<'a, MessageOfR<R, S>> for WebPlatformWriter<'a, 'd, 'n, U, R, S>
+impl<'a, 'd: 'a, U:'d, R:'d, S:'d> DOMNodeProcessor<'d, MessageOfR<R, S>> for WebPlatformWriter<'a, 'd, U, R, S>
     where
     U: Updater<S, MessageOfR<R, S>>,
     R: Renderer<S>
 {
-    type Acc = (*mut (U, R, S), &'a WebDoc<'d>, &'a WebNode<'n>);
+    type Acc = (*mut (U, R, S), &'a WebDoc<'d>, &'a WebNode<'d>);
     type Error = ();
 
-    fn get_processor<T: DOMNode<Message=MessageOfR<R, S>>>() -> fn(&mut Self::Acc, &'a T) -> Result<(), Self::Error> {
+    fn get_processor<T: DOMNode<Message=MessageOfR<R, S>>>() -> fn(&mut Self::Acc, &'d T) -> Result<(), Self::Error> {
 
         // Private to this function because it's actually unsafe to use, but there's
         // currently no way to make it unsafe to use a safe trait, and we need to use
         // the ListenerProcessor trait
         struct WebPlatformListenerWriter<
-            'a, 'n: 'a,
-            U: Updater<S, MessageOfR<R, S>>,
-            R: Renderer<S>,
-            S>
+            'a, 'd: 'a,
+            U: Updater<S, MessageOfR<R, S>> + 'd,
+            R: Renderer<S> + 'd,
+            S:'d>
         (
-            PhantomData<(&'a (), &'n (), U, R, S)>
+            PhantomData<(&'a (), &'d (), U, R, S)>
         );
-        impl<'a, 'n: 'a, U, R, S> ListenerProcessor<'a, MessageOfR<R, S>> for
-            WebPlatformListenerWriter<'a, 'n, U, R, S>
+        impl<'a, 'd: 'a, U:'d, R:'d, S:'d> ListenerProcessor<'d, MessageOfR<R, S>> for
+            WebPlatformListenerWriter<'a, 'd, U, R, S>
             where
             U: Updater<S, MessageOfR<R, S>>,
             R: Renderer<S>
         {
-            type Acc = (*mut (U, R, S), &'a WebNode<'n>);
+            type Acc = (*mut (U, R, S), &'a WebNode<'d>);
             type Error = ();
 
-            fn get_processor<L: Listener<Message=MessageOfR<R, S>>>() -> fn(&mut Self::Acc, &'a L) -> Result<(), Self::Error> {
-                fn add_listener<'a, 'n, U, R, S, L> (
-                    acc: &mut (*mut (U, R, S), &'a WebNode<'n>),
-                    listener: &'a L) -> Result<(), ()> where L: Listener
+            fn get_processor<L: Listener<Message=MessageOfR<R, S>>>() -> fn(&mut Self::Acc, &'d L) -> Result<(), Self::Error> {
+                fn add_listener<'a, 'd, U:'d, R:'d, S:'d, L> (
+                    acc: &mut (*mut (U, R, S), &'a WebNode<'d>),
+                    listener: &'d L) -> Result<(), ()> where L: Listener
                 {
                     let (ref boxed_system_ptr_ref, ref node) = *acc;
                     let boxed_system_ptr: *mut (U, R, S) =
@@ -145,8 +147,6 @@ impl<'a, 'd: 'a, 'n: 'a, U, R, S> DOMNodeProcessor<'a, MessageOfR<R, S>> for Web
                     let listener_ptr = listener as *const L;
 
                     node.on("click", move |_target| {
-                        // TODO update
-                        /*
                         let boxed_system_mut_ref: &mut (U, R, S) = unsafe {
                             boxed_system_ptr.as_mut().unwrap()
                         };
@@ -157,7 +157,7 @@ impl<'a, 'd: 'a, 'n: 'a, U, R, S> DOMNodeProcessor<'a, MessageOfR<R, S>> for Web
                             listener_ptr.as_ref().unwrap()
                         };
                         let message = listener_ref.handle_event(domafic::events::Event {});
-                        */
+                        // TODO update
                     });
 
                     Ok(())
@@ -166,9 +166,9 @@ impl<'a, 'd: 'a, 'n: 'a, U, R, S> DOMNodeProcessor<'a, MessageOfR<R, S>> for Web
             }
         }
 
-        fn add_node<'a, 'd, 'n, T, U, R, S>(
-                acc: &mut (*mut (U, R, S), &'a WebDoc<'d>, &'a WebNode<'n>),
-                node: &T) -> Result<(), ()>
+        fn add_node<'a, 'd:'a, T, U:'d, R:'d, S:'d>(
+                acc: &mut (*mut (U, R, S), &'a WebDoc<'d>, &'a WebNode<'d>),
+                node: &'d T) -> Result<(), ()>
                 where
                 T: DOMNode<Message=MessageOfR<R, S>>,
                 U: Updater<S, MessageOfR<R, S>>,
