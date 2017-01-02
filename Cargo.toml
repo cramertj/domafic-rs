@@ -9,10 +9,9 @@ name = "domafic-webplatform-test"
 [dependencies]
 either_n = { version = "0.2.0", optional = true }
 libc = { version = "0.2.16", optional = true }
-webplatform = { version = "0.4.2", optional = true }
 
 [features]
-default = ["use_either_n", "use_std", "use_webplatform"]
+default = ["use_either_n", "use_std", "js_client"]
 use_either_n = ["either_n"]
 use_std = []
-use_webplatform = ["libc", "webplatform", "use_std"]
+js_client = ["libc", "use_std"]

@@ -1,5 +1,6 @@
 #![cfg_attr(test, feature(conservative_impl_trait))]
 #![cfg_attr(not(any(feature = "use_std", test)), no_std)]
+#![allow(unused_unsafe)]
 
 /// A `KeyValue` is a pair of static strings corresponding to a mapping between a key and a value.
 pub type KeyValue = (&'static str, &'static str);
