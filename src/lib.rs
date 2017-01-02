@@ -18,6 +18,8 @@ pub use listener::{Listener, on};
 pub mod processors;
 pub use processors::{DOMNodes, Listeners};
 pub mod tags;
+
+#[cfg(feature = "web_render")]
 pub mod web_render;
 
 pub use empty::{empty};

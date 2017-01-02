@@ -11,7 +11,7 @@ either_n = { version = "0.2.0", optional = true }
 libc = { version = "0.2.16", optional = true }
 
 [features]
-default = ["use_either_n", "use_std", "js_client"]
+default = ["use_either_n", "use_std", "web_render"]
 use_either_n = ["either_n"]
 use_std = []
-js_client = ["libc", "use_std"]
+web_render = ["libc", "use_std"]
