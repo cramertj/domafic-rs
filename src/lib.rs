@@ -31,7 +31,7 @@ pub mod empty {
     use super::processors::{DOMNodes, DOMNodeProcessor, Listeners, ListenerProcessor};
 
     #[derive(Copy, Clone, Debug, Hash, Eq, PartialEq, Ord, PartialOrd)]
-    pub struct EmptyNodes<Message>(PhantomData<Message>);
+    pub struct EmptyNodes<Message>(pub PhantomData<Message>);
     pub fn empty<Message>() -> EmptyNodes<Message> { EmptyNodes(PhantomData) }
     impl<M> DOMNodes for EmptyNodes<M> {
         type Message = M;
@@ -41,7 +41,7 @@ pub mod empty {
     }
 
     #[derive(Copy, Clone, Debug, Hash, Eq, PartialEq, Ord, PartialOrd)]
-    pub struct EmptyListeners<Message>(PhantomData<Message>);
+    pub struct EmptyListeners<Message>(pub PhantomData<Message>);
     pub fn empty_listeners<Message>() -> EmptyListeners<Message> { EmptyListeners(PhantomData) }
     impl<M> Listeners for EmptyListeners<M> {
         type Message = M;
@@ -55,8 +55,8 @@ pub mod empty {
 mod tests {
     use super::{DOMNode, DOMValue, KeyValue, IntoNode};
     use super::tags::*;
-    use super::processors::{DOMNodes, DOMNodeProcessor, ListenerProcessor};
-    use super::empty::empty;
+    use super::processors::{DOMNodes, DOMNodeProcessor};
+    use super::empty::{empty, empty_listeners, EmptyNodes, EmptyListeners};
     use super::html_writer::HtmlWriter;
 
     #[cfg(feature = "use_either_n")]
@@ -64,33 +64,52 @@ mod tests {
     #[cfg(feature = "use_either_n")]
     use self::either_n::*;
 
-    struct BogusOne;
+    use std::marker::PhantomData;
+
+    struct BogusOne(EmptyNodes<Never>, EmptyListeners<Never>);
+    const BOGUS_1: BogusOne = BogusOne(EmptyNodes(PhantomData), EmptyListeners(PhantomData));
     impl DOMNode for BogusOne {
         type Message = Never;
+        type Children = EmptyNodes<Self::Message>;
+        type Listeners = EmptyListeners<Self::Message>;
+        type WithoutListeners = BogusOne;
+
+        fn children(&self) -> &Self::Children { &self.0 }
+        fn listeners(&self) -> &Self::Listeners { &self.1 }
+        fn children_and_listeners(&self) -> (&Self::Children, &Self::Listeners) {
+            (&self.0, &self.1)
+        }
+        fn split_listeners(self) -> (Self::WithoutListeners, Self::Listeners) {
+            (BOGUS_1, empty_listeners())
+        }
+
         fn key(&self) -> Option<usize> { None }
         fn get_attribute(&self, _index: usize) -> Option<&KeyValue> { None }
-        fn process_listeners<P: ListenerProcessor<Self::Message>>(&self, _acc: &mut P::Acc) -> Result<(), P::Error> {
-            Ok(())
-        }
-        fn process_children<P: DOMNodeProcessor>(&self, _acc: &mut P::Acc) -> Result<(), P::Error> {
-            Ok(())
-        }
         fn value<'a>(&'a self) -> DOMValue<'a> {
             DOMValue::Element { tag: "bogus_tag_one" }
         }
     }
 
-    struct BogusTwo;
+    struct BogusTwo(EmptyNodes<Never>, EmptyListeners<Never>);
+    const BOGUS_2: BogusTwo = BogusTwo(EmptyNodes(PhantomData), EmptyListeners(PhantomData));
     impl DOMNode for BogusTwo {
         type Message = Never;
+        type Children = EmptyNodes<Self::Message>;
+        type Listeners = EmptyListeners<Self::Message>;
+        type WithoutListeners = BogusTwo;
+
         fn key(&self) -> Option<usize> { None }
         fn get_attribute(&self, _index: usize) -> Option<&KeyValue> { None }
-        fn process_listeners<P: ListenerProcessor<Self::Message>>(&self, _acc: &mut P::Acc) -> Result<(), P::Error> {
-            Ok(())
+
+        fn children(&self) -> &Self::Children { &self.0 }
+        fn listeners(&self) -> &Self::Listeners { &self.1 }
+        fn children_and_listeners(&self) -> (&Self::Children, &Self::Listeners) {
+            (&self.0, &self.1)
         }
-        fn process_children<P: DOMNodeProcessor>(&self, _acc: &mut P::Acc) -> Result<(), P::Error> {
-            Ok(())
+        fn split_listeners(self) -> (Self::WithoutListeners, Self::Listeners) {
+            (BOGUS_2, empty_listeners())
         }
+
         fn value<'a>(&'a self) -> DOMValue<'a> {
             DOMValue::Element { tag: "bogus_tag_two" }
         }
@@ -99,12 +118,12 @@ mod tests {
     struct ChildCounter;
     #[derive(Debug, Clone, Copy)]
     enum Never {}
-    impl<M> DOMNodeProcessor<M> for ChildCounter {
+    impl<'a, M> DOMNodeProcessor<'a, M> for ChildCounter {
         type Acc = usize;
         type Error = Never;
 
-        fn get_processor<T: DOMNode>() -> fn(&mut Self::Acc, &T) -> Result<(), Never> {
-            fn incr<T: DOMNode>(count: &mut usize, _node: &T) -> Result<(), Never> {
+        fn get_processor<T: DOMNode>() -> fn(&mut Self::Acc, &'a T) -> Result<(), Never> {
+            fn incr<'a, T: DOMNode>(count: &mut usize, _node: &'a T) -> Result<(), Never> {
                 *count += 1;
                 Ok(())
             }
@@ -116,9 +135,9 @@ mod tests {
         div ((
             attributes([("attr", "value")]),
             (
-            BogusOne,
-            BogusOne,
-            BogusTwo,
+            BOGUS_1,
+            BOGUS_1,
+            BOGUS_2,
             table ((
                 "something".into_node(),
                 th (empty()),
@@ -180,23 +199,23 @@ mod tests {
     #[test]
     fn counts_children() {
         let mut count = 0;
-        (BogusOne, &BogusOne, &BogusTwo).process_all::<ChildCounter>(&mut count).unwrap();
+        (BOGUS_1, BOGUS_1, BOGUS_2).process_all::<ChildCounter>(&mut count).unwrap();
         assert_eq!(3, count);
 
         count = 0;
-        (BogusOne, (BogusOne,), BogusOne).process_all::<ChildCounter>(&mut count).unwrap();
+        (BOGUS_1, (BOGUS_1,), BOGUS_2).process_all::<ChildCounter>(&mut count).unwrap();
         assert_eq!(3, count);
 
         count = 0;
-        [BogusOne, BogusOne, BogusOne].process_all::<ChildCounter>(&mut count).unwrap();
+        [BOGUS_1, BOGUS_1, BOGUS_1].process_all::<ChildCounter>(&mut count).unwrap();
         assert_eq!(3, count);
 
         count = 0;
-        (BogusOne, BogusOne,
-            [BogusOne, BogusOne, BogusOne],
-            [(BogusOne)],
+        (BOGUS_1, BOGUS_1,
+            [BOGUS_1, BOGUS_1, BOGUS_1],
+            [(BOGUS_1)],
             vec![empty(), empty(), empty()],
-            [&BogusTwo, &BogusTwo, &BogusTwo],
+            [BOGUS_2, BOGUS_2, BOGUS_2],
         ).process_all::<ChildCounter>(&mut count).unwrap();
         assert_eq!(9, count);
 
@@ -207,7 +226,7 @@ mod tests {
         assert_eq!(1, count);
 
         count = 0;
-        sample.process_children::<ChildCounter>(&mut count).unwrap();
+        sample.children().process_all::<ChildCounter>(&mut count).unwrap();
         assert_eq!(4, count);
     }
 

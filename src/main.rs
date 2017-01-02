@@ -2,7 +2,6 @@
 // TODO Replace with examples in /examples once Windows builds are fixed
 // so that the manual `cargo rustc ... --linker="emcc.bat"` workaround is
 // unnecessary
-#![allow(unused_unsafe)]
 
 extern crate domafic;
 use domafic::IntoNode;
