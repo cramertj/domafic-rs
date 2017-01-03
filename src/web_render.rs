@@ -1,9 +1,14 @@
 extern crate libc;
-use {DOMValue, DOMNode, DOMNodes, Listener, Listeners};
+
+use {DOMValue, DOMNode, DOMNodes, KeyValue, Listener, Listeners};
 use keys::{Keys, KeyIter};
 use events::Event;
 use processors::{DOMNodeProcessor, ListenerProcessor};
+
+use std::borrow::Cow;
+use std::ffi::CString;
 use std::marker::PhantomData;
+use std::mem;
 
 pub trait Updater<State, Message> {
     fn update(&self, &mut State, Message, KeyIter) -> ();
@@ -25,15 +30,20 @@ impl<F, S, R> Renderer<S> for F where F: Fn(&S) -> R, R: DOMNode {
     }
 }
 
+enum VDOMNode<Message: 'static> {
+    TextNode(Cow<'static, str>),
+    Tag {
+        tagname: &'static str,
+        attributes: Vec<KeyValue>,
+        listeners: *const Listener<Message=Message>,
+        children: VDOMLevel<Message>,
+    },
+}
+type VDOMLevel<Message: 'static> = Vec<VDOMNode<Message>>;
+
 use self::web_interface::{Document as WebDoc, Element as WebElement, JsElementId as WebId};
 mod web_interface {
-    use super::{
-        DOMNode, DOMNodes, Event, Listener, Updater, Keys,
-        Renderer, WebWriter, WebWriterAcc
-    };
-    use super::libc;
-    use ::std::ffi::CString;
-    use ::std::mem;
+    use super::*;
 
     extern "C" {
         fn emscripten_asm_const_int(s: *const libc::c_char, ...) -> libc::c_int;
