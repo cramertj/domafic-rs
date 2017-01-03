@@ -136,8 +136,9 @@ mod web_interface {
         }
     }
 
-    unsafe extern fn handle_listener<L, D, U, R, S>(
-        listener_c_ptr: *const libc::c_void,
+    unsafe extern fn handle_listener<D, U, R, S>(
+        listener_data_c_ptr: *const libc::c_void,
+        listener_vtable_c_ptr: *const libc::c_void,
         system_c_ptr: *mut libc::c_void,
         root_node_id: libc::c_int,
         keys_size: libc::c_uint,
@@ -175,13 +176,14 @@ mod web_interface {
         key_32: libc::c_uint,
     )
         where
-        L: Listener<Message=D::Message> + Sized,
         (D, U, R, S): Sized,
         D: DOMNode,
+        D::Message: 'static,
         U: Updater<S, D::Message>,
         R: Renderer<S, Rendered=D>
     {
-        let listener_ref: &mut L = mem::transmute(listener_c_ptr);
+        let listener_ref: &mut Listener<Message=D::Message> =
+            mem::transmute((listener_data_c_ptr, listener_vtable_c_ptr));
         let system_ptr: *mut (D, U, R, S) = mem::transmute(system_c_ptr);
         let system_ref: &mut (D, U, R, S) = system_ptr.as_mut().unwrap();
         let root_node_element = Element(root_node_id);
@@ -270,18 +272,18 @@ mod web_interface {
         /// Requires that `listener_ptr` and `system_ptr` are valid and that
         /// `root_node_id` is a valid `Element` id throughout the duration of
         /// time that it is possible for this callback to be triggered.
-        pub unsafe fn on<L, D, U, R, S>(
+        pub unsafe fn on<D, U, R, S>(
             &self,
             event_name: &str,
-            listener_ptr: *const L,
+            listener_ptr: *const Listener<Message=D::Message>,
             system_ptr: *mut (D, U, R, S),
             root_node_id: libc::c_int,
             keys: Keys,
         )
             where
-            L: Listener<Message=D::Message> + Sized,
-            (D, U, R, S): Sized,
+            (D, U, R, S): Sized, // Make sure *mut (D, U, R, S) is a thin ptr
             D: DOMNode,
+            D::Message: 'static,
             U: Updater<S, D::Message>,
             R: Renderer<S, Rendered=D>
         {
@@ -290,9 +292,9 @@ mod web_interface {
                     __domafic_pool[$0].addEventListener(\
                         UTF8ToString($1),\
                         function(event) {\
-                            Runtime.dynCall('viiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii', $2, [$3, $4, $5,\
-                            $6,\
-                            $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38\
+                            Runtime.dynCall('viiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii', $2, [$3, $4, $5,\
+                            $6, $7,\
+                            $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39\
                             ]);\
                         },\
                         false\
@@ -301,12 +303,17 @@ mod web_interface {
 
                 let event_name_cstring = CString::new(event_name).unwrap();
                 let Keys { size: k_size, stack: k } = keys;
+                let (listener_data_c_ptr, listener_vtable_c_ptr):
+                    (*const libc::c_void, *const libc::c_void) =
+                    mem::transmute(listener_ptr);
+
                 emscripten_asm_const_int(
                     &JS[0] as *const _ as *const libc::c_char,
                     self.0,
                     event_name_cstring.as_ptr() as libc::c_int,
-                    handle_listener::<L, D, U, R, S> as *const libc::c_void,
-                    listener_ptr as *const libc::c_void,
+                    handle_listener::<D, U, R, S> as *const libc::c_void,
+                    listener_data_c_ptr,
+                    listener_vtable_c_ptr,
                     system_ptr as *const libc::c_void,
                     root_node_id,
                     k_size,
@@ -409,6 +416,7 @@ mod web_interface {
 pub fn run<D, U, R, S>(element_selector: &str, updater: U, renderer: R, initial_state: S) -> !
     where
     D: DOMNode,
+    D::Message: 'static,
     U: Updater<S, D::Message>,
     R: Renderer<S, Rendered=D>
 {
@@ -418,8 +426,7 @@ pub fn run<D, U, R, S>(element_selector: &str, updater: U, renderer: R, initial_
 
         // Lives forever on the stack, referenced and mutated in callbacks
         let mut app_system = (rendered, updater, renderer, initial_state);
-        let app_system_mut_ref = &mut app_system;
-        let app_system_mut_ptr = app_system_mut_ref as *mut (D, U, R, S);
+        let app_system_mut_ptr = (&mut app_system) as *mut (D, U, R, S);
 
         // Initialize the browser system
         let document = web_interface::init();
@@ -455,6 +462,7 @@ struct WebWriterAcc<'n, D, U, R, S> {
 impl<'a, 'n, D, U, R, S> DOMNodeProcessor<'a, D::Message> for WebWriter<'a, 'n, D, U, R, S>
     where
     D: DOMNode,
+    D::Message: 'static,
     U: Updater<S, D::Message>,
     R: Renderer<S, Rendered=D>
 {
@@ -468,6 +476,7 @@ impl<'a, 'n, D, U, R, S> DOMNodeProcessor<'a, D::Message> for WebWriter<'a, 'n, 
             where
             T: DOMNode<Message=D::Message>,
             D: DOMNode,
+            D::Message: 'static,
             U: Updater<S, D::Message>,
             R: Renderer<S, Rendered=D>
         {
@@ -539,8 +548,9 @@ impl<'a, 'n, D, U, R, S> ListenerProcessor<'a, D::Message> for
     WebListenerWriter<'n, D, U, R, S>
     where
     D: DOMNode,
+    D::Message: 'static,
     U: Updater<S, D::Message>,
-    R: Renderer<S, Rendered=D>
+    R: Renderer<S, Rendered=D>,
 {
     type Acc = WebListenerWriterAcc<'n, D, U, R, S>;
     type Error = ();
@@ -552,8 +562,9 @@ impl<'a, 'n, D, U, R, S> ListenerProcessor<'a, D::Message> for
             where
             L: Listener<Message=D::Message>,
             D: DOMNode,
+            D::Message: 'static,
             U: Updater<S, D::Message>,
-            R: Renderer<S, Rendered=D>
+            R: Renderer<S, Rendered=D>,
         {
             let WebListenerWriterAcc {
                 ref system_ptr,
@@ -563,7 +574,10 @@ impl<'a, 'n, D, U, R, S> ListenerProcessor<'a, D::Message> for
             } = *acc;
 
             unsafe {
-                node.on("click", listener as *const L, *system_ptr, *root_node_id, *keys);
+                // Transmute to assert that we don't care about lifetimes
+                let listener_ptr: *const Listener<Message=D::Message> =
+                    ::std::mem::transmute(listener as &'a Listener<Message=D::Message>);
+                node.on("click", listener_ptr, *system_ptr, *root_node_id, *keys);
             }
 
             Ok(())

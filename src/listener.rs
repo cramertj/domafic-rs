@@ -1,6 +1,6 @@
 use events;
 
-pub trait Listener: Sized {
+pub trait Listener {
     type Message;
     fn event_types_handled(&self) -> &[events::EventType];
     fn handle_event(&self, events::Event) -> Self::Message;
