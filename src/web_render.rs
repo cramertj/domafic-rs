@@ -131,8 +131,10 @@ mod web_interface {
             let id = {
                 unsafe {
                     const JS: &'static [u8] = b"\
-                        var elem = document.createTextNode(UTF8ToString($0));\
-                        if (!elem) {return -1;}\
+                        var text = document.createTextNode(UTF8ToString($0));\
+                        if (!text) {return -1;}\
+                        var elem = document.createElement('span');\
+                        elem.appendChild(text);\
                         var index = __domafic_pool_free.pop();\
                         if (index) { __domafic_pool[index] = elem; return index; }\
                         return __domafic_pool.push(elem) - 1;\
@@ -288,6 +290,32 @@ mod web_interface {
                     child.0
                 );
             }
+        }
+
+        pub fn insert(&self, index: usize, child: &Element) {
+            let err = unsafe {
+                const JS: &'static [u8] = b"\
+                    var parent = __domafic_pool[$0];\
+                    if ($2 > parent.children.length) { return -1; }\
+                    if ($2 == parent.children.length) {\
+                        parent.appendChild(__domafic_pool[$1]);\
+                    } else {\
+                        parent.insertBefore(__domafic_pool[$1], parent.children[$2]);\
+                    }\
+                    return 0;\
+                \0";
+
+                emscripten_asm_const_int(
+                    &JS[0] as *const _ as *const libc::c_char,
+                    self.0,
+                    child.0,
+                    index as libc::c_int
+                )
+            };
+
+            // Must panic on error because failure to properly add/remove nodes
+            // containing listeners can cause memory unsafety
+            if err < 0 { panic!("Attempted to insert child DOM element out of bounds") }
         }
 
         /// Requires that `listener_ptr` and `system_ptr` are valid and that
@@ -585,7 +613,7 @@ impl<'a, 'n, D, U, R, S> DOMNodeProcessor<'a, D::Message> for WebWriter<'a, 'n, 
                 )?;
                 */
 
-                acc.parent_element.append(&vnode.web_element);
+                acc.parent_element.insert(*acc.node_index, &vnode.web_element);
                 acc.node_level.insert(*acc.node_index, vnode);
             }
 
