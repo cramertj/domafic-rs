@@ -3,7 +3,7 @@ use events;
 pub trait Listener: Sized {
     type Message;
     fn event_types_handled(&self) -> &[events::EventType];
-    fn handle_event(&self, event: events::Event) -> Self::Message;
+    fn handle_event(&self, events::Event) -> Self::Message;
 }
 
 pub struct FnListener<M, A: AsRef<[events::EventType]>, F: Fn(events::Event) -> M> {

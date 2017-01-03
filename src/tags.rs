@@ -16,7 +16,7 @@ pub struct TagProperties<
     Listens: Listeners<Message=Children::Message>>
 {
     children: Children,
-    key: Option<usize>,
+    key: Option<u32>,
     attributes: Attributes,
     listeners: Listens,
 }
@@ -104,7 +104,7 @@ pub struct Tag<
 {
     tagname: &'static str,
     children: Children,
-    key: Option<usize>,
+    key: Option<u32>,
     attributes: Attributes,
     listeners: L,
 }
@@ -114,7 +114,7 @@ impl<C: DOMNodes, A: AsRef<[KeyValue]>, L: Listeners<Message=C::Message>> DOMNod
     type Children = C;
     type Listeners = L;
     type WithoutListeners = Tag<C, A, EmptyListeners<Self::Message>>;
-    fn key(&self) -> Option<usize> { self.key }
+    fn key(&self) -> Option<u32> { self.key }
     fn get_attribute(&self, index: usize) -> Option<&KeyValue> {
         self.attributes.as_ref().get(index)
     }

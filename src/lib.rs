@@ -12,7 +12,8 @@ pub mod events;
 #[cfg(any(feature = "use_std", test))]
 pub mod html_writer;
 
-pub mod key_stack;
+mod keys;
+pub use keys::KeyIter;
 pub mod listener;
 pub use listener::{Listener, on};
 pub mod processors;
@@ -83,7 +84,7 @@ mod tests {
             (BOGUS_1, empty_listeners())
         }
 
-        fn key(&self) -> Option<usize> { None }
+        fn key(&self) -> Option<u32> { None }
         fn get_attribute(&self, _index: usize) -> Option<&KeyValue> { None }
         fn value<'a>(&'a self) -> DOMValue<'a> {
             DOMValue::Element { tag: "bogus_tag_one" }
@@ -98,7 +99,7 @@ mod tests {
         type Listeners = EmptyListeners<Self::Message>;
         type WithoutListeners = BogusTwo;
 
-        fn key(&self) -> Option<usize> { None }
+        fn key(&self) -> Option<u32> { None }
         fn get_attribute(&self, _index: usize) -> Option<&KeyValue> { None }
 
         fn children(&self) -> &Self::Children { &self.0 }

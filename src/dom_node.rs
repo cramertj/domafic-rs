@@ -22,11 +22,11 @@ pub trait DOMNode: Sized {
 
     /// If present, the key will be included in the `KeyStack` returned alongside a message.
     /// This should be used to differentiate messages from peer `DOMNode`s.
-    fn key(&self) -> Option<usize>;
+    fn key(&self) -> Option<u32>;
 
     fn with_key(self, key: usize) -> WithKey<Self> {
         assert!(self.key() == None, "Attempted to add multiple keys to a DOMNode");
-        WithKey(self, key)
+        WithKey(self, key as u32)
     }
 
     /// Get the nth attribute for a given `DOMNode`.
@@ -89,14 +89,14 @@ pub enum DOMValue<'a> {
     Text(&'a str),
 }
 
-pub struct WithKey<T: DOMNode>(T, usize);
+pub struct WithKey<T: DOMNode>(T, u32);
 impl<T: DOMNode> DOMNode for WithKey<T> {
     type Message = T::Message;
     type Children = T::Children;
     type Listeners = T::Listeners;
     type WithoutListeners = WithKey<T::WithoutListeners>;
 
-    fn key(&self) -> Option<usize> { Some(self.1) }
+    fn key(&self) -> Option<u32> { Some(self.1) }
     fn get_attribute(&self, index: usize) -> Option<&KeyValue> {
         self.0.get_attribute(index)
     }
@@ -127,7 +127,7 @@ impl<T, A> DOMNode for WithAttributes<T, A> where T: DOMNode, A: AsRef<[KeyValue
     type Children = T::Children;
     type Listeners = T::Listeners;
     type WithoutListeners = WithAttributes<T::WithoutListeners, A>;
-    fn key(&self) -> Option<usize> { self.node.key() }
+    fn key(&self) -> Option<u32> { self.node.key() }
     fn get_attribute(&self, index: usize) -> Option<&KeyValue> {
         let attributes = self.attributes.as_ref();
         attributes
@@ -169,7 +169,7 @@ impl<T, L> DOMNode for WithListeners<T, L>
     type Children = T::Children;
     type Listeners = L;
     type WithoutListeners = T;
-    fn key(&self) -> Option<usize> { self.node.key() }
+    fn key(&self) -> Option<u32> { self.node.key() }
     fn get_attribute(&self, index: usize) -> Option<&KeyValue> {
         self.node.get_attribute(index)
     }
@@ -202,29 +202,6 @@ impl<'a, T: DOMNode> Iterator for AttributeIter<'a, T> {
         res
     }
 }
-
-/*
-impl<'a, T: DOMNode> DOMNode for &'a T {
-    type Message = T::Message;
-    type Children = T::Children;
-    type Listeners = T::Listeners;
-    type WithoutListeners = T::WithoutListeners;
-    fn key(&self) -> Option<usize> { (*self).key() }
-    fn get_attribute(&self, index: usize) -> Option<&KeyValue> {
-        (*self).get_attribute(index)
-    }
-    fn children(&self) -> &Self::Children {
-        (*self).children()
-    }
-    fn listeners(&self) -> &Self::Listeners {
-        (*self).listeners()
-    }
-    fn children_and_listeners(&self) -> (&Self::Children, &Self::Listeners) {
-        (*self).children_and_listeners()
-    }
-    fn value<'b>(&'b self) -> DOMValue<'b> { (*self).value() }
-}
-*/
 
 pub trait IntoNode<M> {
     type Node: DOMNode<Message = M>;
@@ -259,7 +236,7 @@ impl<M> DOMNode for StringNode<M> {
     type Children = EmptyNodes<M>;
     type Listeners = EmptyListeners<M>;
     type WithoutListeners = Self;
-    fn key(&self) -> Option<usize> { None }
+    fn key(&self) -> Option<u32> { None }
     fn get_attribute(&self, _index: usize) -> Option<&KeyValue> { None }
     fn children(&self) -> &Self::Children {
         &self.1
@@ -281,7 +258,7 @@ impl<M> DOMNode for StringRefNode<M> {
     type Children = EmptyNodes<M>;
     type Listeners = EmptyListeners<M>;
     type WithoutListeners = Self;
-    fn key(&self) -> Option<usize> { None }
+    fn key(&self) -> Option<u32> { None }
     fn get_attribute(&self, _index: usize) -> Option<&KeyValue> { None }
     fn children(&self) -> &Self::Children {
         &self.1

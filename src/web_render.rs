@@ -1,15 +1,16 @@
 extern crate libc;
 use {DOMValue, DOMNode, DOMNodes, Listener, Listeners};
+use keys::{Keys, KeyIter};
 use events::Event;
 use processors::{DOMNodeProcessor, ListenerProcessor};
 use std::marker::PhantomData;
 
 pub trait Updater<State, Message> {
-    fn update(&self, &mut State, Message) -> ();
+    fn update(&self, &mut State, Message, KeyIter) -> ();
 }
-impl<F, S, M> Updater<S, M> for F where F: Fn(&mut S, M) -> () {
-    fn update(&self, state: &mut S, msg: M) -> () {
-        (self)(state, msg)
+impl<F, S, M> Updater<S, M> for F where F: Fn(&mut S, M, KeyIter) -> () {
+    fn update(&self, state: &mut S, msg: M, keys: KeyIter) -> () {
+        (self)(state, msg, keys)
     }
 }
 
@@ -27,7 +28,7 @@ impl<F, S, R> Renderer<S> for F where F: Fn(&S) -> R, R: DOMNode {
 use self::web_interface::{Document as WebDoc, Element as WebElement, JsElementId as WebId};
 mod web_interface {
     use super::{
-        DOMNode, DOMNodes, Event, Listener, Updater,
+        DOMNode, DOMNodes, Event, Listener, Updater, Keys,
         Renderer, WebWriter, WebWriterAcc
     };
     use super::libc;
@@ -131,7 +132,40 @@ mod web_interface {
     unsafe extern fn handle_listener<L, D, U, R, S>(
         listener_c_ptr: *const libc::c_void,
         system_c_ptr: *mut libc::c_void,
-        root_node_id: libc::c_int
+        root_node_id: libc::c_int,
+        keys_size: libc::c_uint,
+        key_1: libc::c_uint,
+        key_2: libc::c_uint,
+        key_3: libc::c_uint,
+        key_4: libc::c_uint,
+        key_5: libc::c_uint,
+        key_6: libc::c_uint,
+        key_7: libc::c_uint,
+        key_8: libc::c_uint,
+        key_9: libc::c_uint,
+        key_10: libc::c_uint,
+        key_11: libc::c_uint,
+        key_12: libc::c_uint,
+        key_13: libc::c_uint,
+        key_14: libc::c_uint,
+        key_15: libc::c_uint,
+        key_16: libc::c_uint,
+        key_17: libc::c_uint,
+        key_18: libc::c_uint,
+        key_19: libc::c_uint,
+        key_20: libc::c_uint,
+        key_21: libc::c_uint,
+        key_22: libc::c_uint,
+        key_23: libc::c_uint,
+        key_24: libc::c_uint,
+        key_25: libc::c_uint,
+        key_26: libc::c_uint,
+        key_27: libc::c_uint,
+        key_28: libc::c_uint,
+        key_29: libc::c_uint,
+        key_30: libc::c_uint,
+        key_31: libc::c_uint,
+        key_32: libc::c_uint,
     )
         where
         L: Listener<Message=D::Message> + Sized,
@@ -144,13 +178,50 @@ mod web_interface {
         let system_ptr: *mut (D, U, R, S) = mem::transmute(system_c_ptr);
         let system_ref: &mut (D, U, R, S) = system_ptr.as_mut().unwrap();
         let root_node_element = Element(root_node_id);
+        let keys = Keys {
+            size: keys_size,
+            stack: [
+                key_1,
+                key_2,
+                key_3,
+                key_4,
+                key_5,
+                key_6,
+                key_7,
+                key_8,
+                key_9,
+                key_10,
+                key_11,
+                key_12,
+                key_13,
+                key_14,
+                key_15,
+                key_16,
+                key_17,
+                key_18,
+                key_19,
+                key_20,
+                key_21,
+                key_22,
+                key_23,
+                key_24,
+                key_25,
+                key_26,
+                key_27,
+                key_28,
+                key_29,
+                key_30,
+                key_31,
+                key_32,
+            ]
+        };
 
         let message = listener_ref.handle_event(Event {});
 
         let (ref mut rendered, ref mut updater, ref mut renderer, ref mut state) = *system_ref;
 
         // Update state
-        updater.update(state, message);
+        updater.update(state, message, keys.into_iter());
 
         // Render new DOMNode
         *rendered = renderer.render(state);
@@ -163,6 +234,7 @@ mod web_interface {
                 document: Document(()),
                 root_node_id: root_node_id,
                 parent_node: &root_node_element,
+                keys: Keys::new(),
             };
             rendered.process_all::<WebWriter<D, U, R, S>>(&mut input).unwrap();
         }
@@ -197,6 +269,7 @@ mod web_interface {
             listener_ptr: *const L,
             system_ptr: *mut (D, U, R, S),
             root_node_id: libc::c_int,
+            keys: Keys,
         )
             where
             L: Listener<Message=D::Message> + Sized,
@@ -210,13 +283,17 @@ mod web_interface {
                     __domafic_pool[$0].addEventListener(\
                         UTF8ToString($1),\
                         function(event) {\
-                            Runtime.dynCall('viii', $2, [$3, $4, $5]);\
+                            Runtime.dynCall('viiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii', $2, [$3, $4, $5,\
+                            $6,\
+                            $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38\
+                            ]);\
                         },\
                         false\
                     );\
                 \0";
 
                 let event_name_cstring = CString::new(event_name).unwrap();
+                let Keys { size: k_size, stack: k } = keys;
                 emscripten_asm_const_int(
                     &JS[0] as *const _ as *const libc::c_char,
                     self.0,
@@ -224,7 +301,40 @@ mod web_interface {
                     handle_listener::<L, D, U, R, S> as *const libc::c_void,
                     listener_ptr as *const libc::c_void,
                     system_ptr as *const libc::c_void,
-                    root_node_id
+                    root_node_id,
+                    k_size,
+                    k[0],
+                    k[1],
+                    k[2],
+                    k[3],
+                    k[4],
+                    k[5],
+                    k[6],
+                    k[7],
+                    k[8],
+                    k[9],
+                    k[10],
+                    k[11],
+                    k[12],
+                    k[13],
+                    k[14],
+                    k[15],
+                    k[16],
+                    k[17],
+                    k[18],
+                    k[19],
+                    k[20],
+                    k[21],
+                    k[22],
+                    k[23],
+                    k[24],
+                    k[25],
+                    k[26],
+                    k[27],
+                    k[28],
+                    k[29],
+                    k[30],
+                    k[31]
                 );
             }
         }
@@ -313,6 +423,7 @@ pub fn run<D, U, R, S>(element_selector: &str, updater: U, renderer: R, initial_
             document: document,
             root_node_id: root_node_element.get_id(),
             parent_node: &root_node_element,
+            keys: Keys::new(),
         };
         (*app_system_mut_ptr).0.process_all::<WebWriter<D, U, R, S>>(&mut input).unwrap();
 
@@ -325,6 +436,7 @@ struct WebWriter<'a, 'n, D, U, R, S>(
 );
 struct WebWriterAcc<'n, D, U, R, S> {
     system_ptr: *mut (D, U, R, S),
+    keys: Keys,
     document: WebDoc,
     root_node_id: WebId,
     parent_node: &'n WebElement,
@@ -349,6 +461,7 @@ impl<'a, 'n, D, U, R, S> DOMNodeProcessor<'a, D::Message> for WebWriter<'a, 'n, 
             U: Updater<S, D::Message>,
             R: Renderer<S, Rendered=D>
         {
+            let node_key = node.key();
             match node.value() {
                 DOMValue::Element { tag: tagname } => {
                     let html_node = acc.document.create_element(tagname).unwrap();
@@ -356,12 +469,19 @@ impl<'a, 'n, D, U, R, S> DOMNodeProcessor<'a, D::Message> for WebWriter<'a, 'n, 
                         html_node.set_attribute(attr.0, attr.1);
                     }
 
+                    let keys = if let Some(new_key) = node_key {
+                        acc.keys.push(new_key)
+                    } else {
+                        acc.keys
+                    };
+
                     // Reborrow of *document needed to match lifetimes for 'a
                     let mut new_acc = WebWriterAcc {
                         system_ptr: acc.system_ptr,
                         document: acc.document,
                         root_node_id: acc.root_node_id,
                         parent_node: &html_node,
+                        keys: keys,
                     };
                     node.children().process_all::<WebWriter<D, U, R, S>>(&mut new_acc)?;
 
@@ -369,6 +489,7 @@ impl<'a, 'n, D, U, R, S> DOMNodeProcessor<'a, D::Message> for WebWriter<'a, 'n, 
                         system_ptr: acc.system_ptr,
                         root_node_id: acc.root_node_id,
                         node: &html_node,
+                        keys: keys,
                     };
                     node.listeners().process_all::<WebListenerWriter<D, U, R, S>>(
                         &mut listener_acc
@@ -400,7 +521,8 @@ struct WebListenerWriter<
 struct WebListenerWriterAcc<'n, D, U, R, S> {
     system_ptr: *mut (D, U, R, S),
     root_node_id: WebId,
-    node: &'n WebElement
+    node: &'n WebElement,
+    keys: Keys,
 }
 
 impl<'a, 'n, D, U, R, S> ListenerProcessor<'a, D::Message> for
@@ -427,10 +549,11 @@ impl<'a, 'n, D, U, R, S> ListenerProcessor<'a, D::Message> for
                 ref system_ptr,
                 ref root_node_id,
                 ref node,
+                ref keys,
             } = *acc;
 
             unsafe {
-                node.on("click", listener as *const L, *system_ptr, *root_node_id);
+                node.on("click", listener as *const L, *system_ptr, *root_node_id, *keys);
             }
 
             Ok(())

@@ -4,13 +4,11 @@
 // unnecessary
 
 extern crate domafic;
-use domafic::IntoNode;
+use domafic::{DOMNode, KeyIter, IntoNode};
 use domafic::tags::{button, div, h1};
 use domafic::events::EventType::Click;
 use domafic::listener::on;
 use domafic::web_render::run;
-
-type State = isize;
 
 enum Msg {
     Increment,
@@ -18,16 +16,16 @@ enum Msg {
 }
 
 fn main() {
-    let update = |state: &mut State, msg: Msg| {
+
+    let update_button = |state: &mut isize, msg: Msg, _keys: KeyIter| {
         *state = match msg {
             Msg::Increment => *state + 1,
             Msg::Decrement => *state - 1,
         }
     };
 
-    let render = |state: &State| {
+    let render_button = |state: &isize| {
         div ((
-            h1("Hello from rust!".into_node()),
             button ((
                 on(Click, |_| Msg::Decrement),
                 "-".into_node(),
@@ -40,5 +38,20 @@ fn main() {
         ))
     };
 
-    run("body", update, render, 0);
+    let update = |state: &mut Vec<isize>, msg: Msg, mut keys: KeyIter| {
+        let key = keys.next().unwrap();
+        update_button(&mut state[key], msg, keys)
+    };
+
+    let render = |state: &Vec<isize>| {
+        div ((
+            h1("Hello from rust!".into_node()),
+            state
+                .iter().enumerate()
+                .map(|(index, count)| render_button(count).with_key(index))
+                .collect::<Vec<_>>()
+        ))
+    };
+
+    run("body", update, render, vec![0, 0, 0]);
 }
