@@ -24,6 +24,9 @@ pub trait DOMNode: Sized {
     /// This should be used to differentiate messages from peer `DOMNode`s.
     fn key(&self) -> Option<u32>;
 
+    // TODO fix u32/usize crud by sending a usize to emscripten via casting to and from a pointer
+    /// Note: currently accepts only 32-bit keys. `usize` input is provided for convenience of use with
+    /// methods like `Iterator::enumerate` which provide a usize.
     fn with_key(self, key: usize) -> WithKey<Self> {
         assert!(self.key() == None, "Attempted to add multiple keys to a DOMNode");
         WithKey(self, key as u32)
@@ -83,7 +86,7 @@ pub trait DOMNode: Sized {
 /// value of a text node (e.g. "Hello world!").
 pub enum DOMValue<'a> {
     /// Tag name for an element
-    Element { tag: &'a str },
+    Element { tag: &'static str },
 
     /// The text value of a text node
     Text(&'a str),

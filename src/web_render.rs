@@ -5,7 +5,6 @@ use keys::{Keys, KeyIter};
 use events::Event;
 use processors::{DOMNodeProcessor, ListenerProcessor};
 
-use std::borrow::Cow;
 use std::ffi::CString;
 use std::marker::PhantomData;
 use std::mem;
@@ -30,14 +29,17 @@ impl<F, S, R> Renderer<S> for F where F: Fn(&S) -> R, R: DOMNode {
     }
 }
 
-enum VDOMNode<Message: 'static> {
-    TextNode(Cow<'static, str>),
-    Tag {
-        tagname: &'static str,
-        attributes: Vec<KeyValue>,
-        listeners: *const Listener<Message=Message>,
-        children: VDOMLevel<Message>,
-    },
+enum VNodeValue {
+    Text(String),
+    Tag(&'static str),
+}
+struct VDOMNode<Message: 'static> {
+    value: VNodeValue,
+    key: Option<u32>,
+    web_element: WebElement,
+    attributes: Vec<KeyValue>,
+    listeners: Vec<*const Listener<Message=Message>>,
+    children: VDOMLevel<Message>,
 }
 type VDOMLevel<Message: 'static> = Vec<VDOMNode<Message>>;
 
@@ -194,8 +196,8 @@ mod web_interface {
     {
         let listener_ref: &mut Listener<Message=D::Message> =
             mem::transmute((listener_data_c_ptr, listener_vtable_c_ptr));
-        let system_ptr: *mut (D, U, R, S) = mem::transmute(system_c_ptr);
-        let system_ref: &mut (D, U, R, S) = system_ptr.as_mut().unwrap();
+        let system_ptr: *mut (D, U, R, S, VDOMNode<D::Message>) = mem::transmute(system_c_ptr);
+        let system_ref: &mut (D, U, R, S, VDOMNode<D::Message>) = system_ptr.as_mut().unwrap();
         let root_node_element = Element(root_node_id);
         let keys = Keys {
             size: keys_size,
@@ -237,7 +239,13 @@ mod web_interface {
 
         let message = listener_ref.handle_event(Event {});
 
-        let (ref mut rendered, ref mut updater, ref mut renderer, ref mut state) = *system_ref;
+        let (
+            ref mut rendered,
+            ref mut updater,
+            ref mut renderer,
+            ref mut state,
+            ref mut vdom_root,
+        ) = *system_ref;
 
         // Update state
         updater.update(state, message, keys.into_iter());
@@ -246,14 +254,17 @@ mod web_interface {
         *rendered = renderer.render(state);
 
         // Write new DOMNode to root element
-        root_node_element.remove_all_children();
+        // TODO: remove once DOM diffing is working
+        vdom_root.web_element.remove_all_children();
         {
+            let mut node_index = 0;
             let mut input = WebWriterAcc {
                 system_ptr: system_ptr,
                 document: Document(()),
-                root_node_id: root_node_id,
-                parent_node: &root_node_element,
                 keys: Keys::new(),
+                parent_element: &vdom_root.web_element,
+                node_level: &mut vdom_root.children,
+                node_index: &mut node_index,
             };
             rendered.process_all::<WebWriter<D, U, R, S>>(&mut input).unwrap();
         }
@@ -434,23 +445,38 @@ pub fn run<D, U, R, S>(element_selector: &str, updater: U, renderer: R, initial_
         // Get initial DOMNode
         let rendered = renderer.render(&initial_state);
 
-        // Lives forever on the stack, referenced and mutated in callbacks
-        let mut app_system = (rendered, updater, renderer, initial_state);
-        let app_system_mut_ptr = (&mut app_system) as *mut (D, U, R, S);
-
         // Initialize the browser system
         let document = web_interface::init();
         let root_node_element =
             document.element_from_selector(element_selector).unwrap();
+        root_node_element.remove_all_children();
+
+        // Lives forever on the stack, referenced and mutated in callbacks
+        let mut app_system = (
+            rendered,
+            updater,
+            renderer,
+            initial_state,
+            VDOMNode {
+                value: VNodeValue::Tag("N/A - root"),
+                key: None,
+                web_element: root_node_element,
+                attributes: Vec::new(),
+                listeners: Vec::new(),
+                children: Vec::new(),
+            }
+        );
+        let app_system_mut_ptr = (&mut app_system) as *mut (D, U, R, S, VDOMNode<D::Message>);
 
         // Draw initial DOMNode to browser
-        root_node_element.remove_all_children();
+        let mut node_index = 0;
         let mut input = WebWriterAcc {
             system_ptr: app_system_mut_ptr,
             document: document,
-            root_node_id: root_node_element.get_id(),
-            parent_node: &root_node_element,
             keys: Keys::new(),
+            parent_element: &(*app_system_mut_ptr).4.web_element,
+            node_level: &mut (*app_system_mut_ptr).4.children,
+            node_index: &mut node_index,
         };
         (*app_system_mut_ptr).0.process_all::<WebWriter<D, U, R, S>>(&mut input).unwrap();
 
@@ -461,12 +487,13 @@ pub fn run<D, U, R, S>(element_selector: &str, updater: U, renderer: R, initial_
 struct WebWriter<'a, 'n, D, U, R, S>(
     PhantomData<(&'a (), &'n (), D, U, R, S)>
 );
-struct WebWriterAcc<'n, D, U, R, S> {
-    system_ptr: *mut (D, U, R, S),
+struct WebWriterAcc<'n, D: DOMNode, U, R, S> where D::Message: 'static {
+    system_ptr: *mut (D, U, R, S, VDOMNode<D::Message>),
     keys: Keys,
     document: WebDoc,
-    root_node_id: WebId,
-    parent_node: &'n WebElement,
+    parent_element: &'n WebElement,
+    node_level: &'n mut VDOMLevel<D::Message>,
+    node_index: &'n mut usize,
 }
 
 impl<'a, 'n, D, U, R, S> DOMNodeProcessor<'a, D::Message> for WebWriter<'a, 'n, D, U, R, S>
@@ -491,52 +518,86 @@ impl<'a, 'n, D, U, R, S> DOMNodeProcessor<'a, D::Message> for WebWriter<'a, 'n, 
             R: Renderer<S, Rendered=D>
         {
             let node_key = node.key();
-            match node.value() {
-                DOMValue::Element { tag: tagname } => {
-                    let html_node = acc.document.create_element(tagname).unwrap();
-                    for attr in node.attributes() {
-                        html_node.set_attribute(attr.0, attr.1);
-                    }
+            let match_found = false;
 
-                    let keys = if let Some(new_key) = node_key {
-                        acc.keys.push(new_key)
-                    } else {
-                        acc.keys
-                    };
+            if match_found {
+                // TODO
+            } else {
+                let (html_element, vnode_value) = match node.value() {
+                    DOMValue::Element { tag } => (
+                        acc.document.create_element(tag).unwrap(),
+                        VNodeValue::Tag(tag),
+                    ),
+                    DOMValue::Text(text) => (
+                        acc.document.create_text_node(text).unwrap(),
+                        VNodeValue::Text(text.to_string()),
+                    ),
+                };
 
-                    // Reborrow of *document needed to match lifetimes for 'a
+                let mut vnode_attributes = Vec::new();
+                for attr in node.attributes() {
+                    html_element.set_attribute(attr.0, attr.1);
+                    vnode_attributes.push((attr.0, attr.1));
+                }
+
+                let (keys, vnode_key) = if let Some(new_key) = node_key {
+                    (acc.keys.push(new_key), Some(new_key))
+                } else {
+                    (acc.keys, None)
+                };
+
+                let mut vnode = VDOMNode {
+                    value: vnode_value,
+                    key: vnode_key,
+                    web_element: html_element,
+                    attributes: vnode_attributes,
+                    listeners: Vec::new(),
+                    children: Vec::new(),
+                };
+
+                let mut child_node_index = 0;
+                {
                     let mut new_acc = WebWriterAcc {
                         system_ptr: acc.system_ptr,
-                        document: acc.document,
-                        root_node_id: acc.root_node_id,
-                        parent_node: &html_node,
                         keys: keys,
+                        document: acc.document,
+                        parent_element: &vnode.web_element,
+                        node_level: &mut vnode.children,
+                        node_index: &mut child_node_index,
                     };
                     node.children().process_all::<WebWriter<D, U, R, S>>(&mut new_acc)?;
-
-                    let mut listener_acc = WebListenerWriterAcc {
-                        system_ptr: acc.system_ptr,
-                        root_node_id: acc.root_node_id,
-                        node: &html_node,
-                        keys: keys,
-                    };
-                    node.listeners().process_all::<WebListenerWriter<D, U, R, S>>(
-                        &mut listener_acc
-                    )?;
-
-                    acc.parent_node.append(&html_node);
                 }
-                DOMValue::Text(text) => {
-                    let text_element = acc.document.create_text_node(text).unwrap();
-                    acc.parent_node.append(&text_element);
+                // Remove DOM elements left over from the last render that weren't repurposed
+                while child_node_index < vnode.children.len() {
+                    let unused_dom_element = vnode.children.pop().unwrap();
+                    unused_dom_element.web_element.remove_self();
                 }
+
+                /*
+                let mut listener_acc = WebListenerWriterAcc {
+                    system_ptr: acc.system_ptr,
+                    root_node_id: acc.root_node_id,
+                    node: &html_node,
+                    keys: keys,
+                };
+                node.listeners().process_all::<WebListenerWriter<D, U, R, S>>(
+                    &mut listener_acc
+                )?;
+                */
+
+                acc.parent_element.append(&vnode.web_element);
+                acc.node_level.insert(*acc.node_index, vnode);
             }
+
+            *acc.node_index += 1;
             Ok(())
         }
+
         add_node
     }
 }
 
+/*
 struct WebListenerWriter<
     'n,
     D: DOMNode,
@@ -548,7 +609,7 @@ struct WebListenerWriter<
 );
 
 struct WebListenerWriterAcc<'n, D, U, R, S> {
-    system_ptr: *mut (D, U, R, S),
+    system_ptr: *mut (D, U, R, S, VDOMNode<D::Message>),
     root_node_id: WebId,
     node: &'n WebElement,
     keys: Keys,
@@ -595,3 +656,4 @@ impl<'a, 'n, D, U, R, S> ListenerProcessor<'a, D::Message> for
         add_listener
     }
 }
+*/
