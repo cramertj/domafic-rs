@@ -54,6 +54,7 @@ mod web_interface {
             if('undefined'===typeof __domafic_pool){\
                 console.log('Intializing __domafic_pool');\
                 __domafic_pool=[];\
+                __domafic_pool_free=[];\
             }\
         \0";
 
@@ -80,6 +81,8 @@ mod web_interface {
                     const JS: &'static [u8] = b"\
                         var elem = document.querySelector(UTF8ToString($0));\
                         if (!elem) {return -1;}\
+                        var index = __domafic_pool_free.pop();\
+                        if (index) { __domafic_pool[index] = elem; return index; }\
                         return __domafic_pool.push(elem) - 1;\
                     \0";
                     let selector_cstring = CString::new(selector).unwrap();
@@ -98,6 +101,8 @@ mod web_interface {
                     const JS: &'static [u8] = b"\
                         var elem = document.createElement(UTF8ToString($0));\
                         if (!elem) {return -1;}\
+                        var index = __domafic_pool_free.pop();\
+                        if (index) { __domafic_pool[index] = elem; return index; }\
                         return __domafic_pool.push(elem) - 1;\
                     \0";
                     let tagname_cstring = CString::new(tagname).unwrap();
@@ -116,6 +121,8 @@ mod web_interface {
                     const JS: &'static [u8] = b"\
                         var elem = document.createTextNode(UTF8ToString($0));\
                         if (!elem) {return -1;}\
+                        var index = __domafic_pool_free.pop();\
+                        if (index) { __domafic_pool[index] = elem; return index; }\
                         return __domafic_pool.push(elem) - 1;\
                     \0";
                     let text_cstring = CString::new(text).unwrap();
@@ -386,7 +393,10 @@ mod web_interface {
     impl Drop for Element {
         fn drop(&mut self) {
             unsafe {
-                const JS: &'static [u8] = b"delete __domafic_pool[$0];\0";
+                const JS: &'static [u8] = b"\
+                    delete __domafic_pool[$0];\
+                    __domafic_pool_free.push($0);\
+                \0";
                 emscripten_asm_const_int(
                     &JS[0] as *const _ as *const libc::c_char,
                     self.0,
