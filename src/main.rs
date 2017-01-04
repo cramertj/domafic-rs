@@ -24,15 +24,18 @@ fn main() {
         }
     };
 
+    let decrement = &|_| Msg::Decrement;
+    let increment = &|_| Msg::Increment;
+
     let render_button = |state: &isize| {
         div ((
             button ((
-                on(Click, |_| Msg::Decrement),
+                on(Click, decrement),
                 "-".into_node(),
             )),
             state.to_string().into_node(),
             button ((
-                on(Click, |_| Msg::Increment),
+                on(Click, increment),
                 "+".into_node(),
             )),
         ))
@@ -53,5 +56,5 @@ fn main() {
         ))
     };
 
-    run("body", update, render, vec![0, 0, 0]);
+    run("body", update, render, vec![0; 50]);
 }
