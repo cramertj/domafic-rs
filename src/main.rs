@@ -56,5 +56,5 @@ fn main() {
         ))
     };
 
-    run("body", update, render, vec![0; 50]);
+    run("body", update, render, vec![0; 2000]);
 }

@@ -328,13 +328,14 @@ mod web_interface {
         /// Requires that `listener_ptr` and `system_ptr` are valid and that
         /// `root_node_id` is a valid `Element` id throughout the duration of
         /// time that it is possible for this callback to be triggered.
-        pub unsafe fn on<D, U, R, S>(
+        /// Returns an element that is a reference to the created function
+        pub unsafe fn set_listener<D, U, R, S>(
             &self,
             event_name: &str,
             listener_ptr: *const Listener<Message=D::Message>,
             system_ptr: *mut (D, U, R, S, VDOMNode<D::Message>),
             keys: Keys,
-        )
+        ) -> WebElement
             where
             (D, U, R, S): Sized, // Make sure *mut (D, U, R, S) is a thin ptr
             D: DOMNode,
@@ -344,16 +345,20 @@ mod web_interface {
         {
             unsafe {
                 const JS: &'static [u8] = b"\
+                    var callback = function(event) {\
+                        Runtime.dynCall('viiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii', $2, [$3, $4, $5, $6,\
+                        $7,\
+                        $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38\
+                        ]);\
+                    };\
                     __domafic_pool[$0].addEventListener(\
                         UTF8ToString($1),\
-                        function(event) {\
-                            Runtime.dynCall('viiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii', $2, [$3, $4, $5, $6,\
-                            $7,\
-                            $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38\
-                            ]);\
-                        },\
+                        callback,\
                         false\
                     );\
+                    var index = __domafic_pool_free.pop();\
+                    if (index) { __domafic_pool[index] = callback; return index; }\
+                    return __domafic_pool.push(callback) - 1;\
                 \0";
 
                 let event_name_cstring = CString::new(event_name).unwrap();
@@ -362,7 +367,7 @@ mod web_interface {
                     (*const libc::c_void, *const libc::c_void) =
                     mem::transmute(listener_ptr);
 
-                emscripten_asm_const_int(
+                Element(emscripten_asm_const_int(
                     &JS[0] as *const _ as *const libc::c_char,
                     self.0,
                     event_name_cstring.as_ptr() as libc::c_int,
@@ -403,6 +408,22 @@ mod web_interface {
                     k[29],
                     k[30],
                     k[31]
+                ))
+            }
+        }
+
+        pub fn remove_listener(&self, event_name: &str, listener: &WebElement) {
+            unsafe {
+                const JS: &'static [u8] = b"\
+                    __domafic_pool[$0].removeEventListener(\
+                        UTF8ToString($1), __domafic_pool[$2]);\
+                \0";
+                let event_name_cstring = CString::new(event_name).unwrap();
+                emscripten_asm_const_int(
+                    &JS[0] as *const _ as *const libc::c_char,
+                    self.0,
+                    event_name_cstring.as_ptr() as libc::c_int,
+                    listener.0,
                 );
             }
         }
@@ -542,7 +563,7 @@ struct VDOMNode<Message: 'static> {
     keys: Keys,
     web_element: WebElement,
     attributes: Vec<KeyValue>,
-    listeners: Vec<*const Listener<Message=Message>>,
+    listeners: Vec<(*const Listener<Message=Message>, WebElement)>,
     children: VDOMLevel<Message>,
 }
 type VDOMLevel<Message: 'static> = Vec<VDOMNode<Message>>;
@@ -607,8 +628,7 @@ impl<'a, 'n, D, U, R, S> DOMNodeProcessor<'a, D::Message> for WebWriter<'a, 'n, 
                     // of the old listeners. Cannot match elements with lower indices than
                     // `acc.node_index`, as they are the output of prior calls to `add_node`.
                     if (trial_vnode.keys == keys) &&
-                        (trial_vnode.value == vnode_value) &&
-                        (trial_vnode.listeners.iter().all(|x| listeners.contains(x)))
+                        (trial_vnode.value == vnode_value)
                     {
                         vnode_match_opt_index = Some(trial_index);
                         break;
@@ -626,13 +646,27 @@ impl<'a, 'n, D, U, R, S> DOMNodeProcessor<'a, D::Message> for WebWriter<'a, 'n, 
                 {
                     let mut vnode = &mut acc.node_level[vnode_index];
 
+                    // Remove excess listeners
+                    {
+                        let mut i = 0;
+                        while i < vnode.listeners.len() {
+                            if !listeners.contains(&vnode.listeners[i].0) {
+                                vnode.web_element.remove_listener("click", &vnode.listeners[i].1);
+                                vnode.listeners.remove(i);
+                            } else {
+                                i += 1;
+                            }
+                        }
+                    }
+
                     // Add new listeners
                     for listener in listeners {
-                        if !vnode.listeners.contains(&listener) {
-                            unsafe {
-                                vnode.web_element.on("click", listener, acc.system_ptr, keys);
-                            }
-                            vnode.listeners.push(listener);
+                        if !vnode.listeners.iter().map(|x| x.0).any(|x| x == listener) {
+                            let element = unsafe {
+                                vnode.web_element.set_listener(
+                                    "click", listener, acc.system_ptr, keys)
+                            };
+                            vnode.listeners.push((listener, element));
                         }
                     }
 
@@ -692,10 +726,12 @@ impl<'a, 'n, D, U, R, S> DOMNodeProcessor<'a, D::Message> for WebWriter<'a, 'n, 
                         acc.document.create_text_node(text).unwrap(),
                 };
 
-                for listener in listeners.iter() {
-                    unsafe {
-                        html_element.on("click", *listener, acc.system_ptr, keys);
-                    }
+                let mut listeners_and_elements = Vec::new();
+                for listener in listeners {
+                    let element = unsafe {
+                        html_element.set_listener("click", listener, acc.system_ptr, keys)
+                    };
+                    listeners_and_elements.push((listener, element));
                 }
 
                 let mut vnode_attributes = Vec::new();
@@ -709,7 +745,7 @@ impl<'a, 'n, D, U, R, S> DOMNodeProcessor<'a, D::Message> for WebWriter<'a, 'n, 
                     keys: keys,
                     web_element: html_element,
                     attributes: vnode_attributes,
-                    listeners: listeners,
+                    listeners: listeners_and_elements,
                     children: Vec::new(),
                 };
 
