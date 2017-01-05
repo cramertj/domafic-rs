@@ -53,9 +53,9 @@ mod private {
     use keys::Keys;
     use processors::{DOMNodes, Listeners, DOMNodeProcessor, ListenerProcessor};
 
-    use std::ffi::CString;
+    use std::ffi::{CString, CStr};
     use std::marker::PhantomData;
-    use std::mem;
+    use std::{mem, str};
 
     pub fn run<D, U, R, S>(element_selector: &str, updater: U, renderer: R, initial_state: S) -> !
         where
@@ -214,6 +214,18 @@ mod private {
         listener_data_c_ptr: *const libc::c_void,
         listener_vtable_c_ptr: *const libc::c_void,
         system_c_ptr: *mut libc::c_void,
+        //
+        type_str_ptr: *const libc::c_char,
+        client_x: libc::c_int,
+        client_y: libc::c_int,
+        offset_x: libc::c_int,
+        offset_y: libc::c_int,
+        which_keycode: libc::c_int,
+        shift_key: libc::c_int,
+        alt_key: libc::c_int,
+        ctrl_key: libc::c_int,
+        meta_key: libc::c_int,
+        //
         keys_size: libc::c_uint,
         key_1: libc::c_uint,
         key_2: libc::c_uint,
@@ -259,6 +271,25 @@ mod private {
             mem::transmute((listener_data_c_ptr, listener_vtable_c_ptr));
         let system_ptr: *mut (D, U, R, S, VDOMNode<D::Message>) = mem::transmute(system_c_ptr);
         let system_ref: &mut (D, U, R, S, VDOMNode<D::Message>) = system_ptr.as_mut().unwrap();
+
+        let type_str = if (type_str_ptr as usize) != 0 {
+            str::from_utf8(CStr::from_ptr(type_str_ptr).to_bytes()).ok()
+        } else {
+            None
+        };
+        let event = Event {
+            type_str: type_str,
+            client_x: client_x as i32,
+            client_y: client_y as i32,
+            offset_x: offset_x as i32,
+            offset_y: offset_y as i32,
+            which_keycode: which_keycode as i32,
+            shift_key: shift_key == 1,
+            alt_key: alt_key == 1,
+            ctrl_key: ctrl_key == 1,
+            meta_key: meta_key == 1,
+        };
+
         let keys = Keys {
             size: keys_size,
             stack: [
@@ -297,7 +328,7 @@ mod private {
             ]
         };
 
-        let message = listener_ref.handle_event(Event {});
+        let message = listener_ref.handle_event(event);
 
         let (
             ref mut rendered,
@@ -420,10 +451,22 @@ mod private {
             unsafe {
                 const JS: &'static [u8] = b"\
                     var callback = function(event) {\
-                        Runtime.dynCall('viiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii', $2, [$3, $4, $5, $6,\
-                        $7,\
-                        $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38\
+                        var stack = Runtime.stackSave();\
+                        event = event || window.event;\
+                        var typeStr = event.type ? allocate(intArrayFromString(event.type), 'i8', ALLOC_STACK) : 0;\
+                        Runtime.dynCall('viiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii', $2, [$3, $4, $5,\
+                        typeStr,\
+                        Math.floor(event.clientX || 0), Math.floor(event.clientY || 0),\
+                        Math.floor(event.offsetX || 0), Math.floor(event.offsetY || 0),\
+                        event.which || e.keyCode || 0,\
+                        event.shiftKey ? 1 : 0,\
+                        event.altKey ? 1 : 0,\
+                        event.ctrlKey ? 1 : 0,\
+                        event.metaKey ? 1 : 0,\
+                        $6, $7,\
+                        $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38,\
                         ]);\
+                        Runtime.stackRestore(stack);\
                     };\
                     __domafic_pool[$0].addEventListener(\
                         UTF8ToString($1),\

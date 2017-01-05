@@ -1,6 +1,17 @@
+// TODO make it possible to add fields w/o API breakage
+// Consider single private field and unexported `new` fn.
 #[derive(Debug, Copy, Clone, Hash, Eq, PartialEq)]
-pub struct Event {
-    //TODO
+pub struct Event<'a> {
+    pub type_str: Option<&'a str>,
+    pub client_x: i32,
+    pub client_y: i32,
+    pub offset_x: i32,
+    pub offset_y: i32,
+    pub which_keycode: i32,
+    pub shift_key: bool,
+    pub alt_key: bool,
+    pub ctrl_key: bool,
+    pub meta_key: bool,
 }
 
 pub trait Listener {
