@@ -3,6 +3,7 @@
 #[derive(Debug, Copy, Clone, Hash, Eq, PartialEq)]
 pub struct Event<'a> {
     pub type_str: Option<&'a str>,
+    pub target_value: Option<&'a str>,
     pub client_x: i32,
     pub client_y: i32,
     pub offset_x: i32,

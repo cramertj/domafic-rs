@@ -216,6 +216,7 @@ mod private {
         system_c_ptr: *mut libc::c_void,
         //
         type_str_ptr: *const libc::c_char,
+        target_value_ptr: *const libc::c_char,
         client_x: libc::c_int,
         client_y: libc::c_int,
         offset_x: libc::c_int,
@@ -277,8 +278,14 @@ mod private {
         } else {
             None
         };
+        let target_value = if (target_value_ptr as usize) != 0 {
+            str::from_utf8(CStr::from_ptr(type_str_ptr).to_bytes()).ok()
+        } else {
+            None
+        };
         let event = Event {
             type_str: type_str,
+            target_value: target_value,
             client_x: client_x as i32,
             client_y: client_y as i32,
             offset_x: offset_x as i32,
@@ -454,8 +461,10 @@ mod private {
                         var stack = Runtime.stackSave();\
                         event = event || window.event;\
                         var typeStr = event.type ? allocate(intArrayFromString(event.type), 'i8', ALLOC_STACK) : 0;\
-                        Runtime.dynCall('viiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii', $2, [$3, $4, $5,\
+                        var targetValue = (event.target && event.target.value) ? allocate(intArrayFromString(event.type), 'i8', ALLOC_STACK) : 0;\
+                        Runtime.dynCall('viiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii', $2, [$3, $4, $5,\
                         typeStr,\
+                        targetValue,\
                         Math.floor(event.clientX || 0), Math.floor(event.clientY || 0),\
                         Math.floor(event.offsetX || 0), Math.floor(event.offsetY || 0),\
                         event.which || e.keyCode || 0,\
