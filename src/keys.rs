@@ -7,12 +7,14 @@ pub struct Keys {
 }
 impl Keys {
     /// Create a new `Keys` with no elements
+    #[cfg_attr(not(target_os = "emscripten"), allow(dead_code))]
     pub fn new() -> Keys {
         Keys { size: 0, stack: [0; KEY_STACK_LEN as usize] }
     }
 
     /// Push a new key onto the `Keys`
     /// Immutable. Creates a new `Keys` with the top element.
+    #[cfg_attr(not(target_os = "emscripten"), allow(dead_code))]
     pub fn push(&self, key: u32) -> Keys {
         let mut stack = self.stack.clone();
 

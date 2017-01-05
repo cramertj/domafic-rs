@@ -1,15 +1,18 @@
 extern crate domafic;
-use domafic::{KeyIter, IntoNode};
+use domafic::IntoNode;
 use domafic::tags::{button, div, h1};
 use domafic::events::EventType::Click;
 use domafic::listener::on;
 
 // If rendering client-side with ASM-JS:
-// use domafic::web_render::run;
+#[cfg(target_os = "emscripten")]
+use domafic::web_render::run;
+#[cfg(target_os = "emscripten")]
+use domafic::KeyIter;
 
 // If rendering server-side:
-// use domafic::DOMNodes;
-// use domafic::html_writer::HtmlWriter;
+#[cfg(not(target_os = "emscripten"))]
+use domafic::DOMNode;
 
 type State = isize;
 
@@ -19,6 +22,7 @@ enum Msg {
 }
 
 fn main() {
+    #[cfg(target_os = "emscripten")]
     let update = |state: &mut State, msg: Msg, _keys: KeyIter| {
         *state = match msg {
             Msg::Increment => *state + 1,
@@ -41,12 +45,11 @@ fn main() {
         ))
     };
 
-    // If rendering client-side with ASM-JS:
-    // run("body", update, render, 0);
-
     // If rendering server-side:
-    // let mut string_buffer = Vec::new();
-    // render(0).process_all::<HtmlWriter<Vec<u8>>>(&mut string_buffer).unwrap();
-    // let string = String::from_utf8(string_buffer).unwrap();
-    // render(0).process_all<HtmlWriter>();
+    #[cfg(not(target_os = "emscripten"))]
+    println!("HTML: {}", render(&0).displayable());
+
+    // If rendering client-side with ASM-JS:
+    #[cfg(target_os = "emscripten")]
+    run("body", update, render, 0);
 }

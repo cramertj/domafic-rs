@@ -1,13 +1,5 @@
-extern crate libc;
-
-use {DOMValue, DOMNode, DOMNodes, KeyValue, Listener, Listeners};
-use keys::{Keys, KeyIter};
-use events::Event;
-use processors::{DOMNodeProcessor, ListenerProcessor};
-
-use std::ffi::CString;
-use std::marker::PhantomData;
-use std::mem;
+use DOMNode;
+use keys::KeyIter;
 
 pub trait Updater<State, Message> {
     fn update(&self, &mut State, Message, KeyIter) -> ();
@@ -29,9 +21,92 @@ impl<F, S, R> Renderer<S> for F where F: Fn(&S) -> R, R: DOMNode {
     }
 }
 
-use self::web_interface::{Document as WebDoc, Element as WebElement};
-mod web_interface {
-    use super::*;
+#[cfg(target_os = "emscripten")]
+pub fn run<D, U, R, S>(element_selector: &str, updater: U, renderer: R, initial_state: S) -> !
+        where
+        D: DOMNode,
+        D::Message: 'static,
+        U: Updater<S, D::Message>,
+        R: Renderer<S, Rendered=D>
+{
+    private::run(element_selector, updater, renderer, initial_state)
+}
+
+#[cfg(not(target_os = "emscripten"))]
+pub fn run<D, U, R, S>(element_selector: &str, updater: U, renderer: R, initial_state: S) -> !
+        where
+        D: DOMNode,
+        D::Message: 'static,
+        U: Updater<S, D::Message>,
+        R: Renderer<S, Rendered=D>
+{
+    let _ = (element_selector, updater, renderer, initial_state);
+    panic!("Target does not support web_render::run (requires emscripten).")
+}
+
+#[cfg(target_os = "emscripten")]
+mod private {
+    extern crate libc;
+
+    use super::{Updater, Renderer};
+    use {DOMNode, DOMValue, KeyValue, Listener};
+    use events::Event;
+    use keys::Keys;
+    use processors::{DOMNodes, Listeners, DOMNodeProcessor, ListenerProcessor};
+
+    use std::ffi::CString;
+    use std::marker::PhantomData;
+    use std::mem;
+
+    pub fn run<D, U, R, S>(element_selector: &str, updater: U, renderer: R, initial_state: S) -> !
+        where
+        D: DOMNode,
+        D::Message: 'static,
+        U: Updater<S, D::Message>,
+        R: Renderer<S, Rendered=D>
+    {
+        unsafe {
+            // Get initial DOMNode
+            let rendered = renderer.render(&initial_state);
+
+            // Initialize the browser system
+            let document = web_init();
+            let root_node_element =
+                document.element_from_selector(element_selector).unwrap();
+            root_node_element.remove_all_children();
+
+            // Lives forever on the stack, referenced and mutated in callbacks
+            let mut app_system = (
+                rendered,
+                updater,
+                renderer,
+                initial_state,
+                VDOMNode {
+                    value: VNodeValue::Tag("N/A - root"),
+                    keys: Keys::new(),
+                    web_element: root_node_element,
+                    attributes: Vec::new(),
+                    listeners: Vec::new(),
+                    children: Vec::new(),
+                }
+            );
+            let app_system_mut_ptr = (&mut app_system) as *mut (D, U, R, S, VDOMNode<D::Message>);
+
+            // Draw initial DOMNode to browser
+            let mut node_index = 0;
+            let mut input = WebWriterAcc {
+                system_ptr: app_system_mut_ptr,
+                document: document,
+                keys: Keys::new(),
+                parent_element: &(*app_system_mut_ptr).4.web_element,
+                node_level: &mut (*app_system_mut_ptr).4.children,
+                node_index: &mut node_index,
+            };
+            (*app_system_mut_ptr).0.process_all::<WebWriter<D, U, R, S>>(&mut input).unwrap();
+
+            run_main_web_loop()
+        }
+    }
 
     extern "C" {
         fn emscripten_asm_const_int(s: *const libc::c_char, ...) -> libc::c_int;
@@ -39,15 +114,15 @@ mod web_interface {
         fn emscripten_set_main_loop(m: extern fn(), fps: libc::c_int, infinite: libc::c_int);
     }
 
-    pub type JsElementId = libc::c_int;
+    type JsElementId = libc::c_int;
 
     #[derive(Debug)]
-    pub struct Element(JsElementId);
+    struct WebElement(JsElementId);
 
     #[derive(Debug, Copy, Clone)]
-    pub struct Document(()); // Contains private () so that it can't be created externally
+    struct WebDocument(()); // Contains private () so that it can't be created externally
 
-    pub fn init() -> Document {
+    fn web_init() -> WebDocument {
         const JS: &'static [u8] = b"\
             if('undefined'===typeof __domafic_pool){\
                 console.log('Intializing __domafic_pool');\
@@ -60,20 +135,20 @@ mod web_interface {
             emscripten_asm_const_int(&JS[0] as *const _ as *const libc::c_char);
         }
 
-        Document(())
+        WebDocument(())
     }
 
-    extern fn pause_main_loop() {
+    extern fn pause_main_web_loop() {
         unsafe { emscripten_pause_main_loop(); }
     }
 
-    pub fn main_loop() -> ! {
-        unsafe { emscripten_set_main_loop(pause_main_loop, 0, 1); }
+    fn run_main_web_loop() -> ! {
+        unsafe { emscripten_set_main_loop(pause_main_web_loop, 0, 1); }
         panic!("Emscripten main loop should never return")
     }
 
-    impl Document {
-        pub fn element_from_selector(&self, selector: &str) -> Option<Element> {
+    impl WebDocument {
+        fn element_from_selector(&self, selector: &str) -> Option<WebElement> {
             let id = {
                 unsafe {
                     const JS: &'static [u8] = b"\
@@ -90,10 +165,10 @@ mod web_interface {
                     )
                 }
             };
-            if id < 0 { None } else { Some(Element(id)) }
+            if id < 0 { None } else { Some(WebElement(id)) }
         }
 
-        pub fn create_element(&self, tagname: &str) -> Option<Element> {
+        fn create_element(&self, tagname: &str) -> Option<WebElement> {
             let id = {
                 unsafe {
                     const JS: &'static [u8] = b"\
@@ -110,10 +185,10 @@ mod web_interface {
                     )
                 }
             };
-            if id < 0 { None } else { Some(Element(id)) }
+            if id < 0 { None } else { Some(WebElement(id)) }
         }
 
-        pub fn create_text_node(&self, text: &str) -> Option<Element> {
+        fn create_text_node(&self, text: &str) -> Option<WebElement> {
             let id = {
                 unsafe {
                     const JS: &'static [u8] = b"\
@@ -132,7 +207,7 @@ mod web_interface {
                     )
                 }
             };
-            if id < 0 { None } else { Some(Element(id)) }
+            if id < 0 { None } else { Some(WebElement(id)) }
         }
     }
 
@@ -244,7 +319,7 @@ mod web_interface {
             let mut node_index = 0;
             let mut input = WebWriterAcc {
                 system_ptr: system_ptr,
-                document: Document(()),
+                document: WebDocument(()),
                 keys: Keys::new(),
                 parent_element: &vdom_root.web_element,
                 node_level: &mut vdom_root.children,
@@ -254,10 +329,10 @@ mod web_interface {
         }
     }
 
-    impl Element {
-        pub fn get_id(&self) -> JsElementId { self.0 }
+    impl WebElement {
 
-        pub fn append(&self, child: &Element) {
+        #[allow(dead_code)]
+        fn append(&self, child: &WebElement) {
             unsafe {
                 const JS: &'static [u8] = b"\
                     __domafic_pool[$0].appendChild(__domafic_pool[$1]);\
@@ -271,7 +346,7 @@ mod web_interface {
             }
         }
 
-        pub fn insert(&self, index: usize, child: &Element) {
+        fn insert(&self, index: usize, child: &WebElement) {
             let err = unsafe {
                 const JS: &'static [u8] = b"\
                     var parent = __domafic_pool[$0];\
@@ -297,7 +372,7 @@ mod web_interface {
             if err < 0 { panic!("Attempted to insert child DOM element out of bounds") }
         }
 
-        pub fn move_child(&self, old_index: usize, new_index: usize) {
+        fn move_child(&self, old_index: usize, new_index: usize) {
             let err = unsafe {
                 const JS: &'static [u8] = b"\
                     var parent = __domafic_pool[$0];\
@@ -326,10 +401,10 @@ mod web_interface {
         }
 
         /// Requires that `listener_ptr` and `system_ptr` are valid and that
-        /// `root_node_id` is a valid `Element` id throughout the duration of
+        /// `root_node_id` is a valid `WebElement` id throughout the duration of
         /// time that it is possible for this callback to be triggered.
         /// Returns an element that is a reference to the created function
-        pub unsafe fn set_listener<D, U, R, S>(
+        unsafe fn set_listener<D, U, R, S>(
             &self,
             event_name: &str,
             listener_ptr: *const Listener<Message=D::Message>,
@@ -367,7 +442,7 @@ mod web_interface {
                     (*const libc::c_void, *const libc::c_void) =
                     mem::transmute(listener_ptr);
 
-                Element(emscripten_asm_const_int(
+                WebElement(emscripten_asm_const_int(
                     &JS[0] as *const _ as *const libc::c_char,
                     self.0,
                     event_name_cstring.as_ptr() as libc::c_int,
@@ -412,7 +487,7 @@ mod web_interface {
             }
         }
 
-        pub fn remove_listener(&self, event_name: &str, listener: &WebElement) {
+        fn remove_listener(&self, event_name: &str, listener: &WebElement) {
             unsafe {
                 const JS: &'static [u8] = b"\
                     __domafic_pool[$0].removeEventListener(\
@@ -428,7 +503,7 @@ mod web_interface {
             }
         }
 
-        pub fn remove_all_children(&self) {
+        fn remove_all_children(&self) {
             unsafe {
                 const JS: &'static [u8] = b"\
                     var elem = __domafic_pool[$0];\
@@ -442,7 +517,7 @@ mod web_interface {
         }
 
         #[allow(dead_code)]
-        pub fn remove_self(&self) {
+        fn remove_self(&self) {
             unsafe {
                 const JS: &'static [u8] = b"\
                     var elem = __domafic_pool[$0];\
@@ -455,7 +530,7 @@ mod web_interface {
             }
         }
 
-        pub fn remove_attribute(&self, key: &str) {
+        fn remove_attribute(&self, key: &str) {
             unsafe {
                 const JS: &'static [u8] = b"\
                     __domafic_pool[$0].removeAttribute(UTF8ToString($2));\
@@ -469,7 +544,7 @@ mod web_interface {
             }
         }
 
-        pub fn set_attribute(&self, key: &str, value: &str) {
+        fn set_attribute(&self, key: &str, value: &str) {
             unsafe {
                 const JS: &'static [u8] = b"\
                     __domafic_pool[$0].setAttribute(UTF8ToString($1), UTF8ToString($2));\
@@ -486,7 +561,7 @@ mod web_interface {
         }
     }
 
-    impl Drop for Element {
+    impl Drop for WebElement {
         fn drop(&mut self) {
             unsafe {
                 const JS: &'static [u8] = b"\
@@ -500,197 +575,203 @@ mod web_interface {
             }
         }
     }
-}
 
-pub fn run<D, U, R, S>(element_selector: &str, updater: U, renderer: R, initial_state: S) -> !
-    where
-    D: DOMNode,
-    D::Message: 'static,
-    U: Updater<S, D::Message>,
-    R: Renderer<S, Rendered=D>
-{
-    unsafe {
-        // Get initial DOMNode
-        let rendered = renderer.render(&initial_state);
-
-        // Initialize the browser system
-        let document = web_interface::init();
-        let root_node_element =
-            document.element_from_selector(element_selector).unwrap();
-        root_node_element.remove_all_children();
-
-        // Lives forever on the stack, referenced and mutated in callbacks
-        let mut app_system = (
-            rendered,
-            updater,
-            renderer,
-            initial_state,
-            VDOMNode {
-                value: VNodeValue::Tag("N/A - root"),
-                keys: Keys::new(),
-                web_element: root_node_element,
-                attributes: Vec::new(),
-                listeners: Vec::new(),
-                children: Vec::new(),
-            }
-        );
-        let app_system_mut_ptr = (&mut app_system) as *mut (D, U, R, S, VDOMNode<D::Message>);
-
-        // Draw initial DOMNode to browser
-        let mut node_index = 0;
-        let mut input = WebWriterAcc {
-            system_ptr: app_system_mut_ptr,
-            document: document,
-            keys: Keys::new(),
-            parent_element: &(*app_system_mut_ptr).4.web_element,
-            node_level: &mut (*app_system_mut_ptr).4.children,
-            node_index: &mut node_index,
-        };
-        (*app_system_mut_ptr).0.process_all::<WebWriter<D, U, R, S>>(&mut input).unwrap();
-
-        web_interface::main_loop()
+    #[derive(Debug, Clone, Eq, PartialEq)]
+    enum VNodeValue {
+        Text(String),
+        Tag(&'static str),
     }
-}
+    #[derive(Debug)]
+    struct VDOMNode<Message: 'static> {
+        value: VNodeValue,
+        keys: Keys,
+        web_element: WebElement,
+        attributes: Vec<KeyValue>,
+        listeners: Vec<(*const Listener<Message=Message>, WebElement)>,
+        children: VDOMLevel<Message>,
+    }
+    type VDOMLevel<Message: 'static> = Vec<VDOMNode<Message>>;
 
-#[derive(Debug, Clone, Eq, PartialEq)]
-enum VNodeValue {
-    Text(String),
-    Tag(&'static str),
-}
-#[derive(Debug)]
-struct VDOMNode<Message: 'static> {
-    value: VNodeValue,
-    keys: Keys,
-    web_element: WebElement,
-    attributes: Vec<KeyValue>,
-    listeners: Vec<(*const Listener<Message=Message>, WebElement)>,
-    children: VDOMLevel<Message>,
-}
-type VDOMLevel<Message: 'static> = Vec<VDOMNode<Message>>;
+    struct WebWriter<'a, 'n, D, U, R, S>(
+        PhantomData<(&'a (), &'n (), D, U, R, S)>
+    );
+    struct WebWriterAcc<'n, D: DOMNode, U, R, S> where D::Message: 'static {
+        system_ptr: *mut (D, U, R, S, VDOMNode<D::Message>),
+        keys: Keys,
+        document: WebDocument,
+        parent_element: &'n WebElement,
+        node_level: &'n mut VDOMLevel<D::Message>,
+        node_index: &'n mut usize,
+    }
 
+    impl<'a, 'n, D, U, R, S> DOMNodeProcessor<'a, D::Message> for WebWriter<'a, 'n, D, U, R, S>
+        where
+        D: DOMNode,
+        D::Message: 'static,
+        U: Updater<S, D::Message>,
+        R: Renderer<S, Rendered=D>
+    {
+        type Acc = WebWriterAcc<'n, D, U, R, S>;
+        type Error = ();
 
-struct WebWriter<'a, 'n, D, U, R, S>(
-    PhantomData<(&'a (), &'n (), D, U, R, S)>
-);
-struct WebWriterAcc<'n, D: DOMNode, U, R, S> where D::Message: 'static {
-    system_ptr: *mut (D, U, R, S, VDOMNode<D::Message>),
-    keys: Keys,
-    document: WebDoc,
-    parent_element: &'n WebElement,
-    node_level: &'n mut VDOMLevel<D::Message>,
-    node_index: &'n mut usize,
-}
+        fn get_processor<T: DOMNode<Message=D::Message>>() -> fn(&mut Self::Acc, &'a T) -> Result<(), Self::Error> {
+            fn add_node<'a, 'n, T, D, U, R, S>(
+                acc: &mut WebWriterAcc<'n, D, U, R, S>,
+                node: &'a T) -> Result<(), ()>
+                where
+                T: DOMNode<Message=D::Message>,
+                D: DOMNode,
+                D::Message: 'static,
+                U: Updater<S, D::Message>,
+                R: Renderer<S, Rendered=D>
+            {
 
-impl<'a, 'n, D, U, R, S> DOMNodeProcessor<'a, D::Message> for WebWriter<'a, 'n, D, U, R, S>
-    where
-    D: DOMNode,
-    D::Message: 'static,
-    U: Updater<S, D::Message>,
-    R: Renderer<S, Rendered=D>
-{
-    type Acc = WebWriterAcc<'n, D, U, R, S>;
-    type Error = ();
+                let vnode_value = match node.value() {
+                    DOMValue::Element { tag } => VNodeValue::Tag(tag),
+                    DOMValue::Text(text) => VNodeValue::Text(text.to_string()),
+                };
 
-    fn get_processor<T: DOMNode<Message=D::Message>>() -> fn(&mut Self::Acc, &'a T) -> Result<(), Self::Error> {
-        fn add_node<'a, 'n, T, D, U, R, S>(
-            acc: &mut WebWriterAcc<'n, D, U, R, S>,
-            node: &'a T) -> Result<(), ()>
-            where
-            T: DOMNode<Message=D::Message>,
-            D: DOMNode,
-            D::Message: 'static,
-            U: Updater<S, D::Message>,
-            R: Renderer<S, Rendered=D>
-        {
+                let keys = if let Some(new_key) = node.key() {
+                    acc.keys.push(new_key)
+                } else {
+                    acc.keys
+                };
 
-            let vnode_value = match node.value() {
-                DOMValue::Element { tag } => VNodeValue::Tag(tag),
-                DOMValue::Text(text) => VNodeValue::Text(text.to_string()),
-            };
+                let listeners = {
+                    let mut listeners = Vec::new();
+                    node.listeners().process_all::<ListenersToVec<D::Message>>(&mut listeners)?;
+                    listeners
+                };
 
-            let keys = if let Some(new_key) = node.key() {
-                acc.keys.push(new_key)
-            } else {
-                acc.keys
-            };
-
-            let listeners = {
-                let mut listeners = Vec::new();
-                node.listeners().process_all::<ListenersToVec<D::Message>>(&mut listeners)?;
-                listeners
-            };
-
-            let vnode_match_opt_index = {
-                let mut vnode_match_opt_index = None;
-                let mut trial_index = *acc.node_index;
-                while let Some(trial_vnode) = acc.node_level.get(trial_index) {
-                    // Match iff "keys" and "value" are equal and the new listeners are a subset
-                    // of the old listeners. Cannot match elements with lower indices than
-                    // `acc.node_index`, as they are the output of prior calls to `add_node`.
-                    if (trial_vnode.keys == keys) &&
-                        (trial_vnode.value == vnode_value)
-                    {
-                        vnode_match_opt_index = Some(trial_index);
-                        break;
-                    } else {
-                        trial_index += 1;
-                    }
-                }
-                vnode_match_opt_index
-            };
-
-            if let Some(vnode_index) = vnode_match_opt_index {
-                // Modify the existing element
-                // Add new listeners, unify attributes, unify children
-
-                {
-                    let mut vnode = &mut acc.node_level[vnode_index];
-
-                    // Remove excess listeners
-                    {
-                        let mut i = 0;
-                        while i < vnode.listeners.len() {
-                            if !listeners.contains(&vnode.listeners[i].0) {
-                                vnode.web_element.remove_listener("click", &vnode.listeners[i].1);
-                                vnode.listeners.remove(i);
-                            } else {
-                                i += 1;
-                            }
+                let vnode_match_opt_index = {
+                    let mut vnode_match_opt_index = None;
+                    let mut trial_index = *acc.node_index;
+                    while let Some(trial_vnode) = acc.node_level.get(trial_index) {
+                        // Match iff "keys" and "value" are equal and the new listeners are a subset
+                        // of the old listeners. Cannot match elements with lower indices than
+                        // `acc.node_index`, as they are the output of prior calls to `add_node`.
+                        if (trial_vnode.keys == keys) &&
+                            (trial_vnode.value == vnode_value)
+                        {
+                            vnode_match_opt_index = Some(trial_index);
+                            break;
+                        } else {
+                            trial_index += 1;
                         }
                     }
+                    vnode_match_opt_index
+                };
 
-                    // Add new listeners
-                    for listener in listeners {
-                        if !vnode.listeners.iter().map(|x| x.0).any(|x| x == listener) {
-                            let element = unsafe {
-                                vnode.web_element.set_listener(
-                                    "click", listener, acc.system_ptr, keys)
+                if let Some(vnode_index) = vnode_match_opt_index {
+                    // Modify the existing element
+                    // Add new listeners, unify attributes, unify children
+
+                    {
+                        let mut vnode = &mut acc.node_level[vnode_index];
+
+                        // Remove excess listeners
+                        {
+                            let mut i = 0;
+                            while i < vnode.listeners.len() {
+                                if !listeners.contains(&vnode.listeners[i].0) {
+                                    vnode.web_element.remove_listener("click", &vnode.listeners[i].1);
+                                    vnode.listeners.remove(i);
+                                } else {
+                                    i += 1;
+                                }
+                            }
+                        }
+
+                        // Add new listeners
+                        for listener in listeners {
+                            if !vnode.listeners.iter().map(|x| x.0).any(|x| x == listener) {
+                                let element = unsafe {
+                                    vnode.web_element.set_listener(
+                                        "click", listener, acc.system_ptr, keys)
+                                };
+                                vnode.listeners.push((listener, element));
+                            }
+                        }
+
+                        // Remove excess attributes
+                        {
+                            let mut i = 0;
+                            while i < vnode.attributes.len() {
+                                let old_attribute = vnode.attributes[i];
+                                if !node.attributes().any(|attr| *attr == old_attribute) {
+                                    vnode.web_element.remove_attribute(old_attribute.0);
+                                    vnode.attributes.remove(i);
+                                } else {
+                                    i += 1;
+                                }
+                            }
+                        }
+
+                        // Add new attributes
+                        for new_attribute in node.attributes() {
+                            vnode.web_element.set_attribute(new_attribute.0, new_attribute.1);
+                            vnode.attributes.push(*new_attribute);
+                        }
+
+                        // To the children!
+                        let mut child_node_index = 0;
+                        {
+                            let mut new_acc = WebWriterAcc {
+                                system_ptr: acc.system_ptr,
+                                keys: keys,
+                                document: acc.document,
+                                parent_element: &vnode.web_element,
+                                node_level: &mut vnode.children,
+                                node_index: &mut child_node_index,
                             };
-                            vnode.listeners.push((listener, element));
+                            node.children().process_all::<WebWriter<D, U, R, S>>(&mut new_acc)?;
+                        }
+                        // Remove DOM elements left over from the last render that weren't repurposed
+                        while child_node_index < vnode.children.len() {
+                            let unused_dom_element = vnode.children.pop().unwrap();
+                            unused_dom_element.web_element.remove_self();
                         }
                     }
 
-                    // Remove excess attributes
-                    {
-                        let mut i = 0;
-                        while i < vnode.attributes.len() {
-                            let old_attribute = vnode.attributes[i];
-                            if !node.attributes().any(|attr| *attr == old_attribute) {
-                                vnode.web_element.remove_attribute(old_attribute.0);
-                                vnode.attributes.remove(i);
-                            } else {
-                                i += 1;
-                            }
-                        }
+                    // Move the element if the new index is different from the old one
+                    if *acc.node_index != vnode_index {
+                        acc.parent_element.move_child(vnode_index, *acc.node_index);
+                        let old_vnode = acc.node_level.remove(vnode_index);
+                        acc.node_level.insert(*acc.node_index, old_vnode);
+                    }
+                } else {
+                    // Construct as a new element
+
+                    let html_element = match node.value() {
+                        DOMValue::Element { tag } => {
+                            acc.document.create_element(tag).unwrap()},
+                        DOMValue::Text(text) =>
+                            acc.document.create_text_node(text).unwrap(),
+                    };
+
+                    let mut listeners_and_elements = Vec::new();
+                    for listener in listeners {
+                        let element = unsafe {
+                            html_element.set_listener("click", listener, acc.system_ptr, keys)
+                        };
+                        listeners_and_elements.push((listener, element));
                     }
 
-                    // Add new attributes
-                    for new_attribute in node.attributes() {
-                        vnode.web_element.set_attribute(new_attribute.0, new_attribute.1);
-                        vnode.attributes.push(*new_attribute);
+                    let mut vnode_attributes = Vec::new();
+                    for attr in node.attributes() {
+                        html_element.set_attribute(attr.0, attr.1);
+                        vnode_attributes.push((attr.0, attr.1));
                     }
 
-                    // To the children!
+                    let mut vnode = VDOMNode {
+                        value: vnode_value,
+                        keys: keys,
+                        web_element: html_element,
+                        attributes: vnode_attributes,
+                        listeners: listeners_and_elements,
+                        children: Vec::new(),
+                    };
+
                     let mut child_node_index = 0;
                     {
                         let mut new_acc = WebWriterAcc {
@@ -708,94 +789,37 @@ impl<'a, 'n, D, U, R, S> DOMNodeProcessor<'a, D::Message> for WebWriter<'a, 'n, 
                         let unused_dom_element = vnode.children.pop().unwrap();
                         unused_dom_element.web_element.remove_self();
                     }
+
+                    acc.parent_element.insert(*acc.node_index, &vnode.web_element);
+                    acc.node_level.insert(*acc.node_index, vnode);
                 }
 
-                // Move the element if the new index is different from the old one
-                if *acc.node_index != vnode_index {
-                    acc.parent_element.move_child(vnode_index, *acc.node_index);
-                    let old_vnode = acc.node_level.remove(vnode_index);
-                    acc.node_level.insert(*acc.node_index, old_vnode);
-                }
-            } else {
-                // Construct as a new element
-
-                let html_element = match node.value() {
-                    DOMValue::Element { tag } => {
-                        acc.document.create_element(tag).unwrap()},
-                    DOMValue::Text(text) =>
-                        acc.document.create_text_node(text).unwrap(),
-                };
-
-                let mut listeners_and_elements = Vec::new();
-                for listener in listeners {
-                    let element = unsafe {
-                        html_element.set_listener("click", listener, acc.system_ptr, keys)
-                    };
-                    listeners_and_elements.push((listener, element));
-                }
-
-                let mut vnode_attributes = Vec::new();
-                for attr in node.attributes() {
-                    html_element.set_attribute(attr.0, attr.1);
-                    vnode_attributes.push((attr.0, attr.1));
-                }
-
-                let mut vnode = VDOMNode {
-                    value: vnode_value,
-                    keys: keys,
-                    web_element: html_element,
-                    attributes: vnode_attributes,
-                    listeners: listeners_and_elements,
-                    children: Vec::new(),
-                };
-
-                let mut child_node_index = 0;
-                {
-                    let mut new_acc = WebWriterAcc {
-                        system_ptr: acc.system_ptr,
-                        keys: keys,
-                        document: acc.document,
-                        parent_element: &vnode.web_element,
-                        node_level: &mut vnode.children,
-                        node_index: &mut child_node_index,
-                    };
-                    node.children().process_all::<WebWriter<D, U, R, S>>(&mut new_acc)?;
-                }
-                // Remove DOM elements left over from the last render that weren't repurposed
-                while child_node_index < vnode.children.len() {
-                    let unused_dom_element = vnode.children.pop().unwrap();
-                    unused_dom_element.web_element.remove_self();
-                }
-
-                acc.parent_element.insert(*acc.node_index, &vnode.web_element);
-                acc.node_level.insert(*acc.node_index, vnode);
+                *acc.node_index += 1;
+                Ok(())
             }
 
-            *acc.node_index += 1;
-            Ok(())
+            add_node
         }
-
-        add_node
     }
-}
 
-struct ListenersToVec<Message: 'static>(PhantomData<Message>);
-impl<'a, M: 'static> ListenerProcessor<'a, M> for ListenersToVec<M> {
-    type Acc = Vec<*const Listener<Message=M>>;
-    type Error = ();
+    struct ListenersToVec<Message: 'static>(PhantomData<Message>);
+    impl<'a, M: 'static> ListenerProcessor<'a, M> for ListenersToVec<M> {
+        type Acc = Vec<*const Listener<Message=M>>;
+        type Error = ();
 
-    fn get_processor<L: Listener<Message=M>>() -> fn(&mut Self::Acc, &'a L) -> Result<(), Self::Error> {
-        fn add_listener_to_vec<L: Listener>(
-            vec: &mut Vec<*const Listener<Message=L::Message>>,
-            listener: &L) -> Result<(), ()>
-        {
-            vec.push(
-                // Extend the lifetime of the listener (we know it's valid until at least the
-                // next callback) and convert it to a *const
-                unsafe { mem::transmute(listener as &Listener<Message=L::Message>) }
-            );
-            Ok(())
+        fn get_processor<L: Listener<Message=M>>() -> fn(&mut Self::Acc, &'a L) -> Result<(), Self::Error> {
+            fn add_listener_to_vec<L: Listener>(
+                vec: &mut Vec<*const Listener<Message=L::Message>>,
+                listener: &L) -> Result<(), ()>
+            {
+                vec.push(
+                    // Extend the lifetime of the listener (we know it's valid until at least the
+                    // next callback) and convert it to a *const
+                    unsafe { mem::transmute(listener as &Listener<Message=L::Message>) }
+                );
+                Ok(())
+            }
+            add_listener_to_vec
         }
-        add_listener_to_vec
     }
 }

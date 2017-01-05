@@ -3,9 +3,6 @@ name = "domafic"
 version = "0.1.0"
 authors = ["Taylor Cramer <cramertj@cs.washington.edu>"]
 
-[[bin]]
-name = "domafic-webplatform-test"
-
 [dependencies]
 either_n = { version = "0.2.0", optional = true }
 libc = { version = "0.2.16", optional = true }

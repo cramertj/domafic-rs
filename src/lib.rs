@@ -22,6 +22,7 @@ pub mod tags;
 
 #[cfg(feature = "web_render")]
 pub mod web_render;
+#[cfg(all(feature = "web_render", not(target_os = "emscripten")))]
 
 pub use empty::{empty};
 pub mod empty {

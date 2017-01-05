@@ -32,6 +32,12 @@ pub trait DOMNode: Sized {
         WithKey(self, key as u32)
     }
 
+    /// Returns a type that can be displayed as HTML
+    #[cfg(feature = "use_std")]
+    fn displayable<'a>(&'a self) -> ::html_writer::HtmlDisplayable<'a, Self> {
+        ::html_writer::HtmlDisplayable(self)
+    }
+
     /// Get the nth attribute for a given `DOMNode`.
     ///
     /// If `node.get_attribute(i)` returns `None`, `node.get_attribute(j)` should return `None`
