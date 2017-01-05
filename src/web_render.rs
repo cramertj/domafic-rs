@@ -279,7 +279,7 @@ mod private {
             None
         };
         let target_value = if (target_value_ptr as usize) != 0 {
-            str::from_utf8(CStr::from_ptr(type_str_ptr).to_bytes()).ok()
+            str::from_utf8(CStr::from_ptr(target_value_ptr).to_bytes()).ok()
         } else {
             None
         };
@@ -461,7 +461,7 @@ mod private {
                         var stack = Runtime.stackSave();\
                         event = event || window.event;\
                         var typeStr = event.type ? allocate(intArrayFromString(event.type), 'i8', ALLOC_STACK) : 0;\
-                        var targetValue = (event.target && event.target.value) ? allocate(intArrayFromString(event.type), 'i8', ALLOC_STACK) : 0;\
+                        var targetValue = (event.target && event.target.value) ? allocate(intArrayFromString(event.target.value), 'i8', ALLOC_STACK) : 0;\
                         Runtime.dynCall('viiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii', $2, [$3, $4, $5,\
                         typeStr,\
                         targetValue,\
