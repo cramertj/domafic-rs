@@ -49,8 +49,7 @@ mod private {
     extern crate libc;
 
     use super::{Updater, Renderer};
-    use {DOMNode, DOMValue, KeyValue, Listener};
-    use events::Event;
+    use {DOMNode, DOMValue, Event, KeyValue, Listener};
     use keys::Keys;
     use processors::{DOMNodes, Listeners, DOMNodeProcessor, ListenerProcessor};
 
@@ -587,7 +586,7 @@ mod private {
         keys: Keys,
         web_element: WebElement,
         attributes: Vec<KeyValue>,
-        listeners: Vec<(*const Listener<Message=Message>, WebElement)>,
+        listeners: Vec<(WebElement, *const Listener<Message=Message>, &'static str)>,
         children: VDOMLevel<Message>,
     }
     type VDOMLevel<Message: 'static> = Vec<VDOMNode<Message>>;
@@ -647,8 +646,8 @@ mod private {
                     let mut vnode_match_opt_index = None;
                     let mut trial_index = *acc.node_index;
                     while let Some(trial_vnode) = acc.node_level.get(trial_index) {
-                        // Match iff "keys" and "value" are equal and the new listeners are a subset
-                        // of the old listeners. Cannot match elements with lower indices than
+                        // Match iff "keys" and "value" are equal.
+                        // Cannot match elements with lower indices than
                         // `acc.node_index`, as they are the output of prior calls to `add_node`.
                         if (trial_vnode.keys == keys) &&
                             (trial_vnode.value == vnode_value)
@@ -673,23 +672,44 @@ mod private {
                         {
                             let mut i = 0;
                             while i < vnode.listeners.len() {
-                                if !listeners.contains(&vnode.listeners[i].0) {
-                                    vnode.web_element.remove_listener("click", &vnode.listeners[i].1);
+                                let do_remove = {
+                                    let ref listener = vnode.listeners[i];
+                                    let (ref old_element, ref old_ptr, ref old_str) = *listener;
+
+                                    if !listeners.iter().any(|listener|
+                                        *old_ptr == *listener &&
+                                        *old_str == unsafe{ (**listener).event_type_handled() }
+                                    ) {
+                                        vnode.web_element.remove_listener(old_str, &old_element);
+                                        true
+                                    } else {
+                                        i += 1;
+                                        false
+                                    }
+                                };
+
+                                if do_remove {
                                     vnode.listeners.remove(i);
-                                } else {
-                                    i += 1;
                                 }
                             }
                         }
 
                         // Add new listeners
                         for listener in listeners {
-                            if !vnode.listeners.iter().map(|x| x.0).any(|x| x == listener) {
-                                let element = unsafe {
-                                    vnode.web_element.set_listener(
-                                        "click", listener, acc.system_ptr, keys)
-                                };
-                                vnode.listeners.push((listener, element));
+                            unsafe {
+                                let event_type = (*listener).event_type_handled();
+                                if !vnode.listeners.iter().any(|x|
+                                        x.1 == listener &&
+                                        x.2 == event_type
+                                    ) {
+                                    let element = vnode.web_element.set_listener(
+                                        event_type,
+                                        listener,
+                                        acc.system_ptr,
+                                        keys
+                                    );
+                                    vnode.listeners.push((element, listener, event_type));
+                                }
                             }
                         }
 
@@ -749,12 +769,18 @@ mod private {
                             acc.document.create_text_node(text).unwrap(),
                     };
 
-                    let mut listeners_and_elements = Vec::new();
+                    let mut listeners_with_metadata = Vec::new();
                     for listener in listeners {
-                        let element = unsafe {
-                            html_element.set_listener("click", listener, acc.system_ptr, keys)
-                        };
-                        listeners_and_elements.push((listener, element));
+                        unsafe {
+                            let event_type = (*listener).event_type_handled();
+                            let element = html_element.set_listener(
+                                event_type,
+                                listener,
+                                acc.system_ptr,
+                                keys
+                            );
+                            listeners_with_metadata.push((element, listener, event_type));
+                        }
                     }
 
                     let mut vnode_attributes = Vec::new();
@@ -768,7 +794,7 @@ mod private {
                         keys: keys,
                         web_element: html_element,
                         attributes: vnode_attributes,
-                        listeners: listeners_and_elements,
+                        listeners: listeners_with_metadata,
                         children: Vec::new(),
                     };
 

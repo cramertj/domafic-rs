@@ -1,7 +1,6 @@
 extern crate domafic;
 use domafic::{DOMNode, KeyIter, IntoNode};
 use domafic::tags::{button, div, h1};
-use domafic::events::EventType::Click;
 use domafic::listener::on;
 use domafic::web_render::run;
 
@@ -22,12 +21,12 @@ fn main() {
     let render_button = |state: &isize| {
         div ((
             button ((
-                on(Click, |_| Msg::Decrement),
+                on("click", |_| Msg::Decrement),
                 "-".into_node(),
             )),
             state.to_string().into_node(),
             button ((
-                on(Click, |_| Msg::Increment),
+                on("click", |_| Msg::Increment),
                 "+".into_node(),
             )),
         ))

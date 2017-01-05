@@ -7,7 +7,6 @@ pub type KeyValue = (&'static str, &'static str);
 
 pub mod dom_node;
 pub use dom_node::{DOMNode, DOMValue, IntoNode};
-pub mod events;
 
 #[cfg(any(feature = "use_std", test))]
 pub mod html_writer;
@@ -15,14 +14,13 @@ pub mod html_writer;
 mod keys;
 pub use keys::KeyIter;
 pub mod listener;
-pub use listener::{Listener, on};
+pub use listener::{Listener, Event, on};
 pub mod processors;
 pub use processors::{DOMNodes, Listeners};
 pub mod tags;
 
 #[cfg(feature = "web_render")]
 pub mod web_render;
-#[cfg(all(feature = "web_render", not(target_os = "emscripten")))]
 
 pub use empty::{empty};
 pub mod empty {

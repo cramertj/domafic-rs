@@ -1,38 +1,30 @@
-use events;
+#[derive(Debug, Copy, Clone, Hash, Eq, PartialEq)]
+pub struct Event {
+    //TODO
+}
 
 pub trait Listener {
     type Message;
-    fn event_types_handled(&self) -> &[events::EventType];
-    fn handle_event(&self, events::Event) -> Self::Message;
+    fn event_type_handled(&self) -> &'static str;
+    fn handle_event(&self, Event) -> Self::Message;
 }
 
-pub struct FnListener<M, A: AsRef<[events::EventType]>, F: Fn(events::Event) -> M> {
-    events_handled: A,
+pub struct FnListener<M, F: Fn(Event) -> M> {
+    event_type_handled: &'static str,
     f: F,
 }
 
-impl<
-    M,
-    A: AsRef<[events::EventType]>,
-    F: Fn(events::Event) -> M> Listener for FnListener<M, A, F>
-{
+impl<M, F: Fn(Event) -> M> Listener for FnListener<M, F> {
     type Message = M;
-    fn event_types_handled(&self) -> &[events::EventType] {
-        self.events_handled.as_ref()
+    fn event_type_handled(&self) -> &'static str {
+        self.event_type_handled
     }
-    fn handle_event(&self, event: events::Event) -> Self::Message {
+    fn handle_event(&self, event: Event) -> Self::Message {
         (self.f)(event)
     }
 }
 
-pub fn on<M, F: Fn(events::Event) -> M>
-    (event_type: events::EventType, f: F) -> FnListener<M, [events::EventType; 1], F>
+pub fn on<M, F: Fn(Event) -> M>(event_type: &'static str, f: F) -> FnListener<M, F>
 {
-    FnListener { events_handled: [event_type], f: f }
-}
-
-pub fn on_events<M, A: AsRef<[events::EventType]>, F: Fn(events::Event) -> M>
-    (events_handled: A, f: F) -> FnListener<M, A, F>
-{
-    FnListener { events_handled: events_handled, f: f }
+    FnListener { event_type_handled: event_type, f: f }
 }

@@ -1,7 +1,6 @@
 extern crate domafic;
 use domafic::IntoNode;
 use domafic::tags::{button, div, h1};
-use domafic::events::EventType::Click;
 use domafic::listener::on;
 
 // If rendering client-side with ASM-JS:
@@ -34,12 +33,12 @@ fn main() {
         div ((
             h1("Hello from rust!".into_node()),
             button ((
-                on(Click, |_| Msg::Decrement),
+                on("click", |_| Msg::Decrement),
                 "-".into_node(),
             )),
             state.to_string().into_node(),
             button ((
-                on(Click, |_| Msg::Increment),
+                on("click", |_| Msg::Increment),
                 "+".into_node(),
             )),
         ))
