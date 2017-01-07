@@ -1,5 +1,5 @@
 extern crate domafic;
-use domafic::{DOMNode, KeyIter, IntoNode, empty};
+use domafic::{DOMNode, KeyIter, IntoNode};
 use domafic::AttributeValue::*;
 use domafic::tags::*;
 use domafic::listener::on;
@@ -65,8 +65,7 @@ fn main() {
                         Msg::Add(target_value.to_owned())
                     } else { Msg::None }
                 )
-            ),
-            empty()
+            )
         ))
     };
 

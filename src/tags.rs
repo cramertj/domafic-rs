@@ -8,7 +8,7 @@
 /// TODO
 
 use {DOMNode, DOMNodes, DOMValue, KeyValue, Listeners};
-use empty::{empty_listeners, EmptyListeners};
+use empty::{empty, EmptyNodes, empty_listeners, EmptyListeners};
 
 pub struct TagProperties<
     Children: DOMNodes,
@@ -29,7 +29,19 @@ pub fn attributes<A: AsRef<[KeyValue]>>(attrs: A) -> Attrs<A> {
 
 pub struct Attrs<A: AsRef<[KeyValue]>>(A);
 
-// just children
+// No children, attributes, or listeners
+impl<M> From<()> for TagProperties<EmptyNodes<M>, EmptyAttrs, EmptyListeners<M>> {
+    fn from(_props: ()) -> TagProperties<EmptyNodes<M>, EmptyAttrs, EmptyListeners<M>> {
+        TagProperties {
+            children: empty(),
+            key: None,
+            attributes: [],
+            listeners: empty_listeners(),
+        }
+    }
+}
+
+// Just children
 impl<C: DOMNodes> From<C> for TagProperties<C, EmptyAttrs, EmptyListeners<C::Message>> {
     fn from(nodes: C) -> TagProperties<C, EmptyAttrs, EmptyListeners<C::Message>> {
         TagProperties {
@@ -37,6 +49,33 @@ impl<C: DOMNodes> From<C> for TagProperties<C, EmptyAttrs, EmptyListeners<C::Mes
             key: None,
             attributes: [],
             listeners: empty_listeners(),
+        }
+    }
+}
+
+// Just attributes
+impl<M, A: AsRef<[KeyValue]>>
+    From<Attrs<A>> for TagProperties<EmptyNodes<M>, A, EmptyListeners<M>>
+{
+    fn from(props: Attrs<A>) -> TagProperties<EmptyNodes<M>, A, EmptyListeners<M>> {
+        TagProperties {
+            children: empty(),
+            key: None,
+            attributes: props.0,
+            listeners: empty_listeners(),
+        }
+    }
+}
+
+// Just listeners
+impl<L: Listeners> From<L> for TagProperties<EmptyNodes<L::Message>, EmptyAttrs, L>
+{
+    fn from(props: L) -> TagProperties<EmptyNodes<L::Message>, EmptyAttrs, L> {
+        TagProperties {
+            children: empty(),
+            key: None,
+            attributes: [],
+            listeners: props,
         }
     }
 }
@@ -51,6 +90,34 @@ impl<C: DOMNodes, A: AsRef<[KeyValue]>>
             key: None,
             attributes: (props.0).0,
             listeners: empty_listeners(),
+        }
+    }
+}
+
+// (attributes, listeners)
+impl<A: AsRef<[KeyValue]>, L: Listeners>
+    From<(Attrs<A>, L)> for TagProperties<EmptyNodes<L::Message>, A, L>
+{
+    fn from(props: (Attrs<A>, L)) -> TagProperties<EmptyNodes<L::Message>, A, L> {
+        TagProperties {
+            children: empty(),
+            key: None,
+            attributes: (props.0).0,
+            listeners: props.1,
+        }
+    }
+}
+
+// (listeners, attributes)
+impl<A: AsRef<[KeyValue]>, L: Listeners>
+    From<(L, Attrs<A>)> for TagProperties<EmptyNodes<L::Message>, A, L>
+{
+    fn from(props: (L, Attrs<A>)) -> TagProperties<EmptyNodes<L::Message>, A, L> {
+        TagProperties {
+            children: empty(),
+            key: None,
+            attributes: (props.1).0,
+            listeners: props.0,
         }
     }
 }
@@ -149,6 +216,9 @@ impl<C: DOMNodes, A: AsRef<[KeyValue]>, L: Listeners<Message=C::Message>> DOMNod
 
 macro_rules! impl_tags {
     ($($tagname:ident),*) => { $(
+        /// Create a tag of the given type
+        ///
+        ///
         pub fn $tagname<
             C: DOMNodes,
             A: AsRef<[KeyValue]>,
