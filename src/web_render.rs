@@ -11,6 +11,9 @@ impl<F, S, M> Updater<S, M> for F where F: Fn(&mut S, M, KeyIter) -> () {
 }
 
 pub trait Renderer<State> {
+    // Note: this should really be Rendered<'a>: DOMNode + 'a
+    // to allow for references to bits of state, but this is
+    // impossible without ATCs
     type Rendered: DOMNode;
     fn render(&self, &State) -> Self::Rendered;
 }
