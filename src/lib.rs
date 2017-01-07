@@ -2,8 +2,33 @@
 #![cfg_attr(not(any(feature = "use_std", test)), no_std)]
 #![allow(unused_unsafe)]
 
-/// A `KeyValue` is a pair of static strings corresponding to a mapping between a key and a value.
-pub type KeyValue = (&'static str, &'static str);
+/// A `KeyValue` is a mapping between an attribute key and value.
+pub type KeyValue = (&'static str, AttributeValue);
+
+#[derive(Debug, Clone, Hash, Eq, PartialEq)]
+pub enum AttributeValue {
+    Str(&'static str),
+    OwnedStr(String),
+    Bool(bool),
+}
+
+impl AttributeValue {
+    fn as_str(&self) -> &str {
+        match *self {
+            AttributeValue::Str(ref value) => value,
+            AttributeValue::OwnedStr(ref value) => value,
+            AttributeValue::Bool(true) => "true",
+            AttributeValue::Bool(false) => "false",
+        }
+    }
+}
+
+#[cfg(any(feature = "use_std", test))]
+impl std::fmt::Display for AttributeValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
 
 pub mod dom_node;
 pub use dom_node::{DOMNode, DOMValue, IntoNode};
@@ -54,6 +79,7 @@ pub mod empty {
 #[cfg(test)]
 mod tests {
     use super::{DOMNode, DOMValue, KeyValue, IntoNode};
+    use super::AttributeValue::Str;
     use super::tags::*;
     use super::processors::{DOMNodes, DOMNodeProcessor};
     use super::empty::{empty, empty_listeners, EmptyNodes, EmptyListeners};
@@ -133,7 +159,7 @@ mod tests {
 
     fn html_sample() -> impl DOMNode<Message = Never> {
         div ((
-            attributes([("attr", "value")]),
+            attributes([("attr", Str("value"))]),
             (
             BOGUS_1,
             BOGUS_1,
@@ -258,29 +284,29 @@ mod tests {
     }
 
     fn check_attribute_list<T: DOMNode>(div: T) {
-        assert_eq!(div.get_attribute(0), Some(&("attr1", "val1")));
-        assert_eq!(div.get_attribute(1), Some(&("attr2", "val2")));
-        assert_eq!(div.get_attribute(2), Some(&("attr3", "val3")));
+        assert_eq!(div.get_attribute(0), Some(&("attr1", Str("val1"))));
+        assert_eq!(div.get_attribute(1), Some(&("attr2", Str("val2"))));
+        assert_eq!(div.get_attribute(2), Some(&("attr3", Str("val3"))));
         assert_eq!(div.get_attribute(3), None);
 
         let mut attr_iter = div.attributes();
-        assert_eq!(attr_iter.next(), Some(&("attr1", "val1")));
-        assert_eq!(attr_iter.next(), Some(&("attr2", "val2")));
-        assert_eq!(attr_iter.next(), Some(&("attr3", "val3")));
+        assert_eq!(attr_iter.next(), Some(&("attr1", Str("val1"))));
+        assert_eq!(attr_iter.next(), Some(&("attr2", Str("val2"))));
+        assert_eq!(attr_iter.next(), Some(&("attr3", Str("val3"))));
         assert_eq!(attr_iter.next(), None);
     }
 
     #[test]
     fn builds_attribute_list() {
         let div1 = div(empty::<Never>())
-            .with_attributes([("attr2", "val2"), ("attr3", "val3")])
-            .with_attributes([("attr1", "val1")]);
+            .with_attributes([("attr2", Str("val2")), ("attr3", Str("val3"))])
+            .with_attributes([("attr1", Str("val1"))]);
         check_attribute_list(div1);
 
         let div2 = div((
-            attributes([("attr2", "val2"), ("attr3", "val3")]),
+            attributes([("attr2", Str("val2")), ("attr3", Str("val3"))]),
             div(empty::<Never>())
-        )).with_attributes([("attr1", "val1")]);
+        )).with_attributes([("attr1", Str("val1"))]);
         check_attribute_list(div2);
     }
 }

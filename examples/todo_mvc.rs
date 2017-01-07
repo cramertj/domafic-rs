@@ -1,25 +1,73 @@
 extern crate domafic;
 use domafic::{DOMNode, KeyIter, IntoNode, empty};
+use domafic::AttributeValue::*;
 use domafic::tags::*;
 use domafic::listener::on;
 use domafic::web_render::run;
 
 enum Msg {
+    UpdateField(String),
     Add(String),
     Remove,
     None,
 }
 
+struct TodoState {
+    entry_box: String,
+    todos: Vec<String>,
+}
+impl TodoState {
+    fn new() -> TodoState {
+        TodoState {
+            entry_box: String::new(),
+            todos: Vec::new(),
+        }
+    }
+}
+
 fn main() {
 
-    let update = |state: &mut Vec<String>, msg: Msg, mut keys: KeyIter| {
+    let update = |state: &mut TodoState, msg: Msg, mut keys: KeyIter| {
         match msg {
-            Msg::Add(todo) => state.push(todo),
+            Msg::UpdateField(value) => {
+                state.entry_box = value
+            },
+            Msg::Add(todo) => {
+                state.entry_box = String::new();
+                state.todos.push(todo);
+            },
             Msg::Remove => {
-                state.remove(keys.next().unwrap());
+                state.todos.remove(keys.next().unwrap());
             },
             Msg::None => {},
         }
+    };
+
+    const ENTER_KEYCODE: i32 = 13;
+    let render_todo_input_field = |current_value: &str| {
+        input((
+            attributes([
+                ("type", Str("text")),
+                ("placeholder", Str("What do you have to do?")),
+                ("autofocus", Bool(true)),
+                ("value", OwnedStr(current_value.to_owned())),
+            ]),
+            (
+                on("input", |event|
+                    if let Some(target_value) = event.target_value {
+                        Msg::UpdateField(target_value.to_owned())
+                    } else { Msg::None }
+                ),
+                on("keydown", |event|
+                    if let (ENTER_KEYCODE, Some(target_value)) =
+                        (event.which_keycode, event.target_value)
+                    {
+                        Msg::Add(target_value.to_owned())
+                    } else { Msg::None }
+                )
+            ),
+            empty()
+        ))
     };
 
     let render_item = |state: &str| {
@@ -32,27 +80,16 @@ fn main() {
         ))
     };
 
-    const ENTER_KEYCODE: i32 = 13;
-    let render = |state: &Vec<String>| {
+    let render = |state: &TodoState| {
         div ((
             h1("TODO:".into_node()),
-            input((
-                attributes([("placeholder", "What do you have to do?")]),
-                on("keydown", |event|
-                    if let (ENTER_KEYCODE, Some(target_value)) =
-                        (event.which_keycode, event.target_value)
-                    {
-                        Msg::Add(target_value.to_owned())
-                    } else { Msg::None }
-                ),
-                empty()
-            )),
-            state
+            render_todo_input_field(&state.entry_box),
+            state.todos
                 .iter().enumerate()
                 .map(|(index, todo)| render_item(todo).with_key(index))
                 .collect::<Vec<_>>()
         ))
     };
 
-    run("body", update, render, Vec::new());
+    run("body", update, render, TodoState::new());
 }

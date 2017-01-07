@@ -467,7 +467,7 @@ mod private {
                         targetValue,\
                         Math.floor(event.clientX || 0), Math.floor(event.clientY || 0),\
                         Math.floor(event.offsetX || 0), Math.floor(event.offsetY || 0),\
-                        event.which || e.keyCode || 0,\
+                        event.which || event.keyCode || 0,\
                         event.shiftKey ? 1 : 0,\
                         event.altKey ? 1 : 0,\
                         event.ctrlKey ? 1 : 0,\
@@ -584,7 +584,7 @@ mod private {
         fn remove_attribute(&self, key: &str) {
             unsafe {
                 const JS: &'static [u8] = b"\
-                    __domafic_pool[$0].removeAttribute(UTF8ToString($2));\
+                    __domafic_pool[$0][UTF8ToString($1)] = null;\
                 \0";
                 let key_cstring = CString::new(key).unwrap();
                 emscripten_asm_const_int(
@@ -595,13 +595,14 @@ mod private {
             }
         }
 
-        fn set_attribute(&self, key: &str, value: &str) {
+        fn set_attribute(&self, key_value: &KeyValue) {
             unsafe {
                 const JS: &'static [u8] = b"\
-                    __domafic_pool[$0].setAttribute(UTF8ToString($1), UTF8ToString($2));\
+                    __domafic_pool[$0][UTF8ToString($1)] = UTF8ToString($2);\
                 \0";
-                let key_cstring = CString::new(key).unwrap();
-                let value_cstring = CString::new(value).unwrap();
+                let key_cstring = CString::new(key_value.0).unwrap();
+                let value_str = key_value.1.as_str();
+                let value_cstring = CString::new(value_str).unwrap();
                 emscripten_asm_const_int(
                     &JS[0] as *const _ as *const libc::c_char,
                     self.0,
@@ -769,9 +770,17 @@ mod private {
                         {
                             let mut i = 0;
                             while i < vnode.attributes.len() {
-                                let old_attribute = vnode.attributes[i];
-                                if !node.attributes().any(|attr| *attr == old_attribute) {
-                                    vnode.web_element.remove_attribute(old_attribute.0);
+                                let do_remove = {
+                                    let ref old_attribute = vnode.attributes[i];
+                                    if !node.attributes().any(|attr| *attr == *old_attribute) {
+                                        vnode.web_element.remove_attribute(old_attribute.0);
+                                        true
+                                    } else {
+                                        false
+                                    }
+                                };
+
+                                if do_remove {
                                     vnode.attributes.remove(i);
                                 } else {
                                     i += 1;
@@ -781,8 +790,10 @@ mod private {
 
                         // Add new attributes
                         for new_attribute in node.attributes() {
-                            vnode.web_element.set_attribute(new_attribute.0, new_attribute.1);
-                            vnode.attributes.push(*new_attribute);
+                            if !vnode.attributes.contains(new_attribute) {
+                                vnode.web_element.set_attribute(new_attribute);
+                                vnode.attributes.push(new_attribute.clone());
+                            }
                         }
 
                         // To the children!
@@ -837,8 +848,8 @@ mod private {
 
                     let mut vnode_attributes = Vec::new();
                     for attr in node.attributes() {
-                        html_element.set_attribute(attr.0, attr.1);
-                        vnode_attributes.push((attr.0, attr.1));
+                        html_element.set_attribute(attr);
+                        vnode_attributes.push(attr.clone());
                     }
 
                     let mut vnode = VDOMNode {

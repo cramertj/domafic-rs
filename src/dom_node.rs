@@ -57,12 +57,13 @@ pub trait DOMNode: Sized {
     /// use domafic::DOMNode;
     /// use domafic::empty::empty;
     /// use domafic::tags::div;
+    /// use domafic::AttributeValue::Str;
     ///
     /// type MessageType = (); // Type of messages sent in response to JS events
     /// let my_div = div(empty::<MessageType>());
-    /// let my_div_with_attrs = my_div.with_attributes([("key", "value")]);
+    /// let my_div_with_attrs = my_div.with_attributes([("key", Str("value"))]);
     ///
-    /// assert_eq!(my_div_with_attrs.get_attribute(0), Some(&("key", "value")));
+    /// assert_eq!(my_div_with_attrs.get_attribute(0), Some(&("key", Str("value"))));
     ///```
     fn with_attributes<A: AsRef<[KeyValue]>>(self, attributes: A) -> WithAttributes<Self, A> {
         WithAttributes { node: self, attributes: attributes, }
@@ -204,7 +205,7 @@ pub struct AttributeIter<'a, T: DOMNode + 'a> {
 }
 
 impl<'a, T: DOMNode> Iterator for AttributeIter<'a, T> {
-    type Item = &'a (&'static str, &'static str);
+    type Item = &'a KeyValue;
     fn next(&mut self) -> Option<Self::Item> {
         let res = self.node.get_attribute(self.index);
         self.index += 1;
