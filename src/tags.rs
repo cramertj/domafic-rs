@@ -164,6 +164,7 @@ impl<C: DOMNodes, A: AsRef<[KeyValue]>, L: Listeners<Message=<C as DOMNodes>::Me
     }
 }
 
+#[derive(Debug, Copy, Clone, Hash, Eq, PartialEq)]
 pub struct Tag<
     Children: DOMNodes,
     Attributes: AsRef<[KeyValue]>,
@@ -213,6 +214,21 @@ impl<C: DOMNodes, A: AsRef<[KeyValue]>, L: Listeners<Message=C::Message>> DOMNod
         }
     }
 }
+
+#[cfg(feature = "use_std")]
+use std::fmt;
+#[cfg(feature = "use_std")]
+impl<C, A, L> fmt::Display for Tag<C, A, L>
+    where
+    C: DOMNodes,
+    A: AsRef<[KeyValue]>,
+    L: Listeners<Message=C::Message>
+{
+    fn fmt(&self, formatter: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        self.displayable().fmt(formatter)
+    }
+}
+
 
 macro_rules! impl_tags {
     ($($tagname:ident),*) => { $(

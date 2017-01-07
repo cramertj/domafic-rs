@@ -9,10 +9,6 @@ use domafic::web_render::run;
 #[cfg(target_os = "emscripten")]
 use domafic::KeyIter;
 
-// If rendering server-side:
-#[cfg(not(target_os = "emscripten"))]
-use domafic::DOMNode;
-
 type State = isize;
 
 enum Msg {
@@ -46,7 +42,7 @@ fn main() {
 
     // If rendering server-side:
     #[cfg(not(target_os = "emscripten"))]
-    println!("HTML: {}", render(&0).displayable());
+    println!("HTML: {}", render(&0));
 
     // If rendering client-side with ASM-JS:
     #[cfg(target_os = "emscripten")]

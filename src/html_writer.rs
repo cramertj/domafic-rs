@@ -22,14 +22,12 @@ impl<'a, M, W: io::Write> DOMNodeProcessor<'a, M> for HtmlWriter<W> {
                     }
                     write!(w, ">")?;
                     node.children().process_all::<HtmlWriter<W>>(w)?;
-                    write!(w, "</{}>", tagname)?;
+                    write!(w, "</{}>", tagname)
                 }
                 DOMValue::Text(text) => {
-                    // TODO: HTML escaping
-                    write!(w, "{}", text)?;
+                    write!(w, "{}", text)
                 }
             }
-            Ok(())
         }
         add_node
     }
