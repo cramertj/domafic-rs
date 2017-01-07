@@ -16,7 +16,7 @@ impl Keys {
     /// Immutable. Creates a new `Keys` with the top element.
     #[cfg_attr(not(target_os = "emscripten"), allow(dead_code))]
     pub fn push(&self, key: u32) -> Keys {
-        let mut stack = self.stack.clone();
+        let mut stack = self.stack; // Copied
 
         debug_assert!(
             self.size < KEY_STACK_LEN,

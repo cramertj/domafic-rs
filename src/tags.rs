@@ -1,6 +1,6 @@
 /// Tags, such as `div` or `table`.
 ///
-/// To create a `Tag` DOMNode, simply import the tag function
+/// To create a `Tag` `DOMNode`, simply import the tag function
 /// and call it with a type that implements `Into<TagProperties>`.
 ///
 /// Example:
@@ -208,7 +208,7 @@ impl<C: DOMNodes, A: AsRef<[KeyValue]>, L: Listeners<Message=C::Message>> DOMNod
             listeners
         )
     }
-    fn value<'a>(&'a self) -> DOMValue<'a> {
+    fn value(&self) -> DOMValue {
         DOMValue::Element {
             tag: self.tagname,
         }

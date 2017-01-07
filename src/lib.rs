@@ -15,7 +15,7 @@ pub enum AttributeValue {
 impl AttributeValue {
     fn as_str(&self) -> &str {
         match *self {
-            AttributeValue::Str(ref value) => value,
+            AttributeValue::Str(value) => value,
             AttributeValue::OwnedStr(ref value) => value,
             AttributeValue::Bool(true) => "true",
             AttributeValue::Bool(false) => "false",
@@ -111,7 +111,7 @@ mod tests {
 
         fn key(&self) -> Option<u32> { None }
         fn get_attribute(&self, _index: usize) -> Option<&KeyValue> { None }
-        fn value<'a>(&'a self) -> DOMValue<'a> {
+        fn value(&self) -> DOMValue {
             DOMValue::Element { tag: "bogus_tag_one" }
         }
     }
@@ -136,7 +136,7 @@ mod tests {
             (BOGUS_2, empty_listeners())
         }
 
-        fn value<'a>(&'a self) -> DOMValue<'a> {
+        fn value(&self) -> DOMValue {
             DOMValue::Element { tag: "bogus_tag_two" }
         }
     }

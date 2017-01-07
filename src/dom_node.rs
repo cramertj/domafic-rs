@@ -34,7 +34,7 @@ pub trait DOMNode: Sized {
 
     /// Returns a type that can be displayed as HTML
     #[cfg(feature = "use_std")]
-    fn displayable<'a>(&'a self) -> ::html_writer::HtmlDisplayable<'a, Self> {
+    fn displayable(&self) -> ::html_writer::HtmlDisplayable<Self> {
         ::html_writer::HtmlDisplayable(self)
     }
 
@@ -45,7 +45,7 @@ pub trait DOMNode: Sized {
     fn get_attribute(&self, _index: usize) -> Option<&KeyValue>;
 
     /// Returns an iterator over a `DOMNode`'s attributes.
-    fn attributes<'a>(&'a self) -> AttributeIter<'a, Self> {
+    fn attributes(&self) -> AttributeIter<Self> {
         AttributeIter { node: self, index: 0, }
     }
 
@@ -86,7 +86,7 @@ pub trait DOMNode: Sized {
 
     /// Returns an enum representing either the node's HTML tag or, in the case of a text node,
     /// the node's text value.
-    fn value<'a>(&'a self) -> DOMValue<'a>;
+    fn value(&self) -> DOMValue;
 }
 
 /// "Value" of a `DOMNode`: either an element's tag name (e.g. "div"/"h1"/"body") or the text
@@ -123,7 +123,7 @@ impl<T: DOMNode> DOMNode for WithKey<T> {
         let (node, listeners) = self.0.split_listeners();
         (WithKey(node, self.1), listeners)
     }
-    fn value<'a>(&'a self) -> DOMValue<'a> { self.0.value() }
+    fn value(&self) -> DOMValue { self.0.value() }
 }
 
 /// Wrapper for `DOMNode`s that adds attributes.
@@ -163,7 +163,7 @@ impl<T, A> DOMNode for WithAttributes<T, A> where T: DOMNode, A: AsRef<[KeyValue
             listeners
         )
     }
-    fn value<'a>(&'a self) -> DOMValue<'a> { self.node.value() }
+    fn value(&self) -> DOMValue { self.node.value() }
 }
 
 /// Wrapper for `DOMNode`s that adds listeners.
@@ -190,12 +190,12 @@ impl<T, L> DOMNode for WithListeners<T, L>
         &self.listeners
     }
     fn children_and_listeners(&self) -> (&Self::Children, &Self::Listeners) {
-        (&self.node.children(), &self.listeners)
+        (self.node.children(), &self.listeners)
     }
     fn split_listeners(self) -> (Self::WithoutListeners, Self::Listeners) {
         (self.node, self.listeners)
     }
-    fn value<'a>(&'a self) -> DOMValue<'a> { self.node.value() }
+    fn value(&self) -> DOMValue { self.node.value() }
 }
 
 /// Iterator over the attributes of a `DOMNode`
@@ -260,7 +260,7 @@ impl<M> DOMNode for StringNode<M> {
     fn split_listeners(self) -> (Self::WithoutListeners, Self::Listeners) {
         (self, empty_listeners())
     }
-    fn value<'a>(&'a self) -> DOMValue<'a> { DOMValue::Text(&self.0) }
+    fn value(&self) -> DOMValue { DOMValue::Text(&self.0) }
 }
 
 impl<M> DOMNode for StringRefNode<M> {
@@ -282,7 +282,7 @@ impl<M> DOMNode for StringRefNode<M> {
     fn split_listeners(self) -> (Self::WithoutListeners, Self::Listeners) {
         (self, empty_listeners())
     }
-    fn value<'a>(&'a self) -> DOMValue<'a> { DOMValue::Text(self.0) }
+    fn value(&self) -> DOMValue { DOMValue::Text(self.0) }
 }
 
 #[cfg(any(feature = "use_std", test))]
