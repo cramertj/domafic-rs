@@ -18,8 +18,13 @@ pub trait DOMNodeProcessor<'a, Message> {
         -> fn(&mut Self::Acc, &'a T) -> Result<(), Self::Error>;
 }
 
+/// Collection of `DOMNode`s with a common message type
 pub trait DOMNodes {
+    /// Type of messages published by the nodes' listeners in response to events
     type Message;
+
+    /// Processes all of the `DOMNode`s in the given collection using processor `P` and
+    /// accumulator `acc`.
     fn process_all<'a, P: DOMNodeProcessor<'a, Self::Message>>(&'a self, acc: &mut P::Acc) -> Result<(), P::Error>;
 }
 
@@ -40,8 +45,13 @@ pub trait ListenerProcessor<'a, Message> {
     fn get_processor<T: Listener<Message=Message>>() -> fn(&mut Self::Acc, &'a T) -> Result<(), Self::Error>;
 }
 
+/// Collection of `Listener`s with a common message type
 pub trait Listeners {
+    /// Type of messages publishd by the listeners in response to events
     type Message;
+
+    /// Processes all of the listeners in the given collection using processor `P` and
+    /// accumulator `acc`.
     fn process_all<'a, P: ListenerProcessor<'a, Self::Message>>(&'a self, acc: &mut P::Acc) -> Result<(), P::Error>;
 }
 

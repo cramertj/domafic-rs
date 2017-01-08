@@ -1,7 +1,11 @@
 use DOMNode;
 use keys::KeyIter;
 
+/// `Updater`s modify the current application state based on messages.
 pub trait Updater<State, Message> {
+    /// Modify the application state based on a message.
+    ///
+    /// `KeyIter` may be used to identify which component the message originated from.
     fn update(&self, &mut State, Message, KeyIter) -> ();
 }
 impl<F, S, M> Updater<S, M> for F where F: Fn(&mut S, M, KeyIter) -> () {
@@ -10,11 +14,16 @@ impl<F, S, M> Updater<S, M> for F where F: Fn(&mut S, M, KeyIter) -> () {
     }
 }
 
+/// `Renderer`s convert the current state to the current UI `DOMNode`.
 pub trait Renderer<State> {
+
     // Note: this should really be Rendered<'a>: DOMNode + 'a
     // to allow for references to bits of state, but this is
     // impossible without ATCs
+    /// Type of the rendered `DOMNode`
     type Rendered: DOMNode;
+
+    /// Renders a `DOMNode` given the current application state
     fn render(&self, &State) -> Self::Rendered;
 }
 impl<F, S, R> Renderer<S> for F where F: Fn(&S) -> R, R: DOMNode {
@@ -24,6 +33,8 @@ impl<F, S, R> Renderer<S> for F where F: Fn(&S) -> R, R: DOMNode {
     }
 }
 
+/// Runs the application (`updater`, `renderer`, `initial_state`) on the webpage under the element
+/// specified by `element_selector`.
 #[cfg(target_os = "emscripten")]
 pub fn run<D, U, R, S>(element_selector: &str, updater: U, renderer: R, initial_state: S) -> !
         where
@@ -35,6 +46,8 @@ pub fn run<D, U, R, S>(element_selector: &str, updater: U, renderer: R, initial_
     private::run(element_selector, updater, renderer, initial_state)
 }
 
+/// Runs the application (`updater`, `renderer`, `initial_state`) on the webpage under the element
+/// specified by `element_selector`.
 #[cfg(not(target_os = "emscripten"))]
 pub fn run<D, U, R, S>(element_selector: &str, updater: U, renderer: R, initial_state: S) -> !
         where

@@ -10,6 +10,14 @@
 use {DOMNode, DOMNodes, DOMValue, KeyValue, Listeners};
 use empty::{empty, EmptyNodes, empty_listeners, EmptyListeners};
 
+/// Properties used to create a `Tag` `DOMNode`.
+///
+/// This is primarily used as an input (via `Into<TagProperties>`) for the various tag functions.
+/// Note the large number of `From/Into` impls for this struct. Thes allows users to avoid fully
+/// specifying all the fields for `TagProperties` by simply calling the tag function with the
+/// appropriate combination of listeners, attributes, and children.
+///
+/// Note that multiple listeners or multiple children must be grouped into a single tuple.
 pub struct TagProperties<
     Children: DOMNodes,
     Attributes: AsRef<[KeyValue]>,
@@ -23,10 +31,30 @@ pub struct TagProperties<
 
 type EmptyAttrs = [KeyValue; 0];
 
+/// Create an attributes (`Attrs`) struct from the given array of key-value pairs.
+///
+/// Use this function to create a tag with a given list of attributes.
+///
+/// Example:
+///
+/// ```rust
+/// use domafic::DOMNode;
+/// use domafic::empty::empty;
+/// use domafic::tags::{attributes, div};
+/// use domafic::AttributeValue::Str;
+///
+/// let div_with_attrs = div((
+///     attributes([("key", Str("value"))]),
+///     // Need to manually specify message type since it cannot be inferred
+///     empty::<()>()
+/// ));
+/// assert_eq!(div_with_attrs.get_attribute(0), Some(&("key", Str("value"))));
+/// ```
 pub fn attributes<A: AsRef<[KeyValue]>>(attrs: A) -> Attrs<A> {
     Attrs(attrs)
 }
 
+/// Wrapper for an array of attributes re
 pub struct Attrs<A: AsRef<[KeyValue]>>(A);
 
 // No children, attributes, or listeners
@@ -164,6 +192,7 @@ impl<C: DOMNodes, A: AsRef<[KeyValue]>, L: Listeners<Message=<C as DOMNodes>::Me
     }
 }
 
+/// A tag element, such as `div` or `span`.
 #[derive(Debug, Copy, Clone, Hash, Eq, PartialEq)]
 pub struct Tag<
     Children: DOMNodes,
@@ -232,9 +261,12 @@ impl<C, A, L> fmt::Display for Tag<C, A, L>
 
 macro_rules! impl_tags {
     ($($tagname:ident),*) => { $(
-        /// Create a tag of the given type
+        /// Creates a tag of the given type.
         ///
-        ///
+        /// Note the use of `Into<TagProperties>`. This allows for a wide variety of input
+        /// parameters such as `div(())`, `div(...children...)`,
+        /// `div((...attributes..., ...children..))`, `div((...attributes..., ...listeners...))`
+        /// and more.
         pub fn $tagname<
             C: DOMNodes,
             A: AsRef<[KeyValue]>,

@@ -5,6 +5,10 @@ use std::marker::PhantomData;
 use std::fmt;
 use std::io;
 
+/// Type to use for processing a `DOMNode` tree and writing it to HTML.
+///
+/// This type should not ever need to be instantiated. Instead, simply
+/// name the type in calls to `DOMNodes::process_all::<HtmlWriter<...>>(...)`.
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct HtmlWriter<W: io::Write>(PhantomData<W>);
 impl<'a, M, W: io::Write> DOMNodeProcessor<'a, M> for HtmlWriter<W> {

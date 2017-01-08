@@ -8,11 +8,30 @@ use empty::{empty, empty_listeners, EmptyNodes, EmptyListeners};
 /// `String` and `str` can be used to create HTML text nodes.
 pub trait DOMNode: Sized {
 
-    /// Type of message sent by a listener. Messages of this type should be used to update
+    /// The type of message sent by a listener. Messages of this type should be used to update
     /// application state.
     type Message;
+
+    /// The type of the set of children contained by the `DOMNode`.
+    ///
+    /// Examples:
+    /// `Tag<...>`
+    /// `(Tag<...>, Tag<...>, Tag<...>)`
+    /// `[Tag<...>; 5]`
     type Children: DOMNodes<Message=Self::Message>;
+
+    /// The type of the set of listeners watching this `DOMNode` for events.
+    ///
+    /// Examples:
+    /// `FnListener<...>`
+    /// `(FnListener<..>, FnListener<...>)`
+    /// `[Box<Listener<Message=()>>; 5]`
     type Listeners: Listeners<Message=Self::Message>;
+
+    /// The type of the `DOMNode` with its listeners replaced by `EmptyListeners`.
+    ///
+    /// This is useful for splitting the `DOMNode` up into its listener and non-listener components
+    /// so that they can be transformed separately.
     type WithoutListeners:
         DOMNode<
             Message=Self::Message,
@@ -24,15 +43,43 @@ pub trait DOMNode: Sized {
     /// This should be used to differentiate messages from peer `DOMNode`s.
     fn key(&self) -> Option<u32>;
 
-    // TODO fix u32/usize crud by sending a usize to emscripten via casting to and from a pointer
-    /// Note: currently accepts only 32-bit keys. `usize` input is provided for convenience of use with
-    /// methods like `Iterator::enumerate` which provide a usize.
+    /// Add a key to this `DOMNode`. This method will panic if the node already has a key.
+    ///
+    /// Keys are used to differentiate between large numbers of similar components.
+    /// When an event occurs in a keyed component, the keys of that component and all of its
+    /// parent components will be returned to the ""
+    ///
+    /// Example:
+    ///
+    /// ```rust
+    /// use domafic::{DOMNode, KeyIter, IntoNode};
+    /// use domafic::tags::div;
+    /// use domafic::listener::on;
+    /// use domafic::web_render::run;
+    ///
+    /// struct Clicked;
+    /// type State = ();
+    ///
+    /// let _render = |_state: &State| div(
+    ///     (0..50).into_iter().map(|index|
+    ///         div(index.to_string().into_node())
+    ///             .with_listeners(on("click", |_| Clicked))
+    ///             .with_key(index)
+    ///     ).collect::<Vec<_>>()
+    /// );
+    ///
+    /// let _update = |_state: &mut State, _msg: Clicked, mut keys: KeyIter|
+    ///    println!("div number {} was clicked", keys.next().unwrap());
+    ///
+    /// // If using in a browser:
+    /// // run("body", _update, _render, ());
+    /// ```
     fn with_key(self, key: usize) -> WithKey<Self> {
         assert!(self.key() == None, "Attempted to add multiple keys to a DOMNode");
         WithKey(self, key as u32)
     }
 
-    /// Returns a type that can be displayed as HTML
+    /// Returns a wrapper that can displayed as HTML
     #[cfg(feature = "use_std")]
     fn displayable(&self) -> ::html_writer::HtmlDisplayable<Self> {
         ::html_writer::HtmlDisplayable(self)
@@ -60,7 +107,10 @@ pub trait DOMNode: Sized {
     /// use domafic::AttributeValue::Str;
     ///
     /// type MessageType = (); // Type of messages sent in response to JS events
+    ///
+    /// // Need to manually specify message type here since it can't be inferred
     /// let my_div = div(empty::<MessageType>());
+    ///
     /// let my_div_with_attrs = my_div.with_attributes([("key", Str("value"))]);
     ///
     /// assert_eq!(my_div_with_attrs.get_attribute(0), Some(&("key", Str("value"))));
@@ -69,6 +119,24 @@ pub trait DOMNode: Sized {
         WithAttributes { node: self, attributes: attributes, }
     }
 
+    /// Wrap the `DOMNode` in an additional set of liseners.
+    ///
+    /// Example:
+    ///
+    ///```rust
+    /// use domafic::DOMNode;
+    /// use domafic::empty::empty;
+    /// use domafic::listener::on;
+    /// use domafic::tags::div;
+    /// use domafic::AttributeValue::Str;
+    ///
+    /// struct Clicked; // Type of messages sent
+    ///
+    /// // We don't need to manually annotate the message type here since it can be inferred
+    /// let my_div = div(());
+    ///
+    /// let _my_div_with_listener = my_div.with_listeners(on("click", |_| Clicked));
+    ///```
     fn with_listeners<L: Listeners<Message=Self::Message>>(self, listeners: L) ->
             WithListeners<Self::WithoutListeners, (L, Self::Listeners)> {
         let (without_listeners, old_listeners) = self.split_listeners();
@@ -79,9 +147,18 @@ pub trait DOMNode: Sized {
     // type Mapped<Mapper: Map<In=Self::Message>>: DOMNode<Message=Mapper::Out>
     // fn map_listeners<Mapper: Map<In=Self::Message>>(self) -> Mapped<Mapper>
 
+    /// Returns a reference to the children of this `DOMNode`
     fn children(&self) -> &Self::Children;
+
+    /// Returns a reference to the listeners listening for events on this `DOMNode`
     fn listeners(&self) -> &Self::Listeners;
+
+    /// Returns a reference to both the children and listeners of this `DOMNode`
     fn children_and_listeners(&self) -> (&Self::Children, &Self::Listeners);
+
+    /// Splits `self` into two separate components, one with and one without listeners.
+    ///
+    /// This is used to perform type-level modifications to the listeners.
     fn split_listeners(self) -> (Self::WithoutListeners, Self::Listeners);
 
     /// Returns an enum representing either the node's HTML tag or, in the case of a text node,
@@ -92,13 +169,17 @@ pub trait DOMNode: Sized {
 /// "Value" of a `DOMNode`: either an element's tag name (e.g. "div"/"h1"/"body") or the text
 /// value of a text node (e.g. "Hello world!").
 pub enum DOMValue<'a> {
-    /// Tag name for an element
-    Element { tag: &'static str },
+    /// A tag element
+    Element {
+        /// `&'static str` tag name, such as `div` or `span`.
+        tag: &'static str
+    },
 
-    /// The text value of a text node
+    /// A text node
     Text(&'a str),
 }
 
+/// A `DOMNode` with a key
 pub struct WithKey<T: DOMNode>(T, u32);
 impl<T: DOMNode> DOMNode for WithKey<T> {
     type Message = T::Message;
@@ -213,15 +294,20 @@ impl<'a, T: DOMNode> Iterator for AttributeIter<'a, T> {
     }
 }
 
+/// Types that can be converted into `DOMNode`s with messages of type `M`
 pub trait IntoNode<M> {
+    /// The type of the resulting node
     type Node: DOMNode<Message = M>;
+    /// Consume `self` to produce a `DOMNode`
     fn into_node(self) -> Self::Node;
 }
 
 #[cfg(any(feature = "use_std", test))]
+/// `DOMNode` wrapper for `String`s
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct StringNode<Message>(String, EmptyNodes<Message>, EmptyListeners<Message>);
 
+/// `DOMNode` wrapper for `&'static str`s
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct StringRefNode<Message>(&'static str, EmptyNodes<Message>, EmptyListeners<Message>);
 
