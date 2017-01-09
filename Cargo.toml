@@ -3,6 +3,14 @@ name = "domafic"
 version = "0.1.0"
 authors = ["Taylor Cramer <cramertj@cs.washington.edu>"]
 
+license = "MIT/Apache-2.0"
+repository = "https://github.com/cramertj/domafic-rs"
+documentation = "https://docs.rs/domafic/0"
+
+description = "A library for building safe, high-performance, universal web applications"
+
+keywords = ["web", "ui", "javascript", "framework", "template"]
+
 [dependencies]
 either_n = { version = "0.2.0", optional = true }
 libc = { version = "0.2.16", optional = true }
