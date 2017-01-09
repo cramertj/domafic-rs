@@ -3,7 +3,7 @@ use domafic::IntoNode;
 use domafic::tags::{button, div, h1};
 use domafic::listener::on;
 
-// If rendering client-side with ASM-JS:
+// If rendering client-side with asm.js or WebAssembly:
 #[cfg(target_os = "emscripten")]
 use domafic::web_render::run;
 #[cfg(target_os = "emscripten")]
@@ -44,7 +44,7 @@ fn main() {
     #[cfg(not(target_os = "emscripten"))]
     println!("HTML: {}", render(&0));
 
-    // If rendering client-side with ASM-JS:
+    // If rendering client-side with asm.js or WebAssembly:
     #[cfg(target_os = "emscripten")]
     run("body", update, render, 0);
 }
