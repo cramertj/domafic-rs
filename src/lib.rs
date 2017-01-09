@@ -133,7 +133,7 @@
 
 /// Trait for elements that can be drawn as to HTML DOM nodes
 pub mod dom_node;
-pub use dom_node::{DomNode, DOMValue, IntoNode};
+pub use dom_node::{DomNode, DomValue, IntoNode};
 
 #[cfg(any(feature = "use_std", test))]
 /// Types, traits and functions for writing a `DomNode` to HTML
@@ -231,7 +231,7 @@ pub mod empty {
 
 #[cfg(test)]
 mod tests {
-    use super::{DomNode, DOMValue, KeyValue, IntoNode};
+    use super::{DomNode, DomValue, KeyValue, IntoNode};
     use super::AttributeValue::Str;
     use super::tags::*;
     use super::processors::{DomNodes, DomNodeProcessor};
@@ -264,8 +264,8 @@ mod tests {
 
         fn key(&self) -> Option<u32> { None }
         fn get_attribute(&self, _index: usize) -> Option<&KeyValue> { None }
-        fn value(&self) -> DOMValue {
-            DOMValue::Element { tag: "bogus_tag_one" }
+        fn value(&self) -> DomValue {
+            DomValue::Element { tag: "bogus_tag_one" }
         }
     }
 
@@ -289,8 +289,8 @@ mod tests {
             (BOGUS_2, empty_listeners())
         }
 
-        fn value(&self) -> DOMValue {
-            DOMValue::Element { tag: "bogus_tag_two" }
+        fn value(&self) -> DomValue {
+            DomValue::Element { tag: "bogus_tag_two" }
         }
     }
 

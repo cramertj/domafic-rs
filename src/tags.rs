@@ -7,7 +7,7 @@
 ///
 /// TODO
 
-use {DomNode, DomNodes, DOMValue, KeyValue, Listeners};
+use {DomNode, DomNodes, DomValue, KeyValue, Listeners};
 use empty::{empty, EmptyNodes, empty_listeners, EmptyListeners};
 
 /// Properties used to create a `Tag` `DomNode`.
@@ -237,8 +237,8 @@ impl<C: DomNodes, A: AsRef<[KeyValue]>, L: Listeners<Message=C::Message>> DomNod
             listeners
         )
     }
-    fn value(&self) -> DOMValue {
-        DOMValue::Element {
+    fn value(&self) -> DomValue {
+        DomValue::Element {
             tag: self.tagname,
         }
     }

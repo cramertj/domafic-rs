@@ -49,7 +49,7 @@ mod private {
     extern crate libc;
 
     use super::{Updater, Renderer};
-    use {DomNode, DOMValue, Event, KeyValue, Listener};
+    use {DomNode, DomValue, Event, KeyValue, Listener};
     use keys::Keys;
     use processors::{DomNodes, Listeners, DomNodeProcessor, ListenerProcessor};
 
@@ -683,8 +683,8 @@ mod private {
             {
 
                 let vnode_value = match node.value() {
-                    DOMValue::Element { tag } => VNodeValue::Tag(tag),
-                    DOMValue::Text(text) => VNodeValue::Text(text.to_string()),
+                    DomValue::Element { tag } => VNodeValue::Tag(tag),
+                    DomValue::Text(text) => VNodeValue::Text(text.to_string()),
                 };
 
                 let keys = if let Some(new_key) = node.key() {
@@ -830,9 +830,9 @@ mod private {
                     // Construct as a new element
 
                     let html_element = match node.value() {
-                        DOMValue::Element { tag } => {
+                        DomValue::Element { tag } => {
                             acc.document.create_element(tag).unwrap()},
-                        DOMValue::Text(text) =>
+                        DomValue::Text(text) =>
                             acc.document.create_text_node(text).unwrap(),
                     };
 

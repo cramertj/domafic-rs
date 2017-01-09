@@ -166,12 +166,12 @@ pub trait DomNode: Sized {
 
     /// Returns an enum representing either the node's HTML tag or, in the case of a text node,
     /// the node's text value.
-    fn value(&self) -> DOMValue;
+    fn value(&self) -> DomValue;
 }
 
 /// "Value" of a `DomNode`: either an element's tag name (e.g. "div"/"h1"/"body") or the text
 /// value of a text node (e.g. "Hello world!").
-pub enum DOMValue<'a> {
+pub enum DomValue<'a> {
     /// A tag element
     Element {
         /// `&'static str` tag name, such as `div` or `span`.
@@ -207,7 +207,7 @@ impl<T: DomNode> DomNode for WithKey<T> {
         let (node, listeners) = self.0.split_listeners();
         (WithKey(node, self.1), listeners)
     }
-    fn value(&self) -> DOMValue { self.0.value() }
+    fn value(&self) -> DomValue { self.0.value() }
 }
 
 /// Wrapper for `DomNode`s that adds attributes.
@@ -247,7 +247,7 @@ impl<T, A> DomNode for WithAttributes<T, A> where T: DomNode, A: AsRef<[KeyValue
             listeners
         )
     }
-    fn value(&self) -> DOMValue { self.node.value() }
+    fn value(&self) -> DomValue { self.node.value() }
 }
 
 /// Wrapper for `DomNode`s that adds listeners.
@@ -279,7 +279,7 @@ impl<T, L> DomNode for WithListeners<T, L>
     fn split_listeners(self) -> (Self::WithoutListeners, Self::Listeners) {
         (self.node, self.listeners)
     }
-    fn value(&self) -> DOMValue { self.node.value() }
+    fn value(&self) -> DomValue { self.node.value() }
 }
 
 /// Iterator over the attributes of a `DomNode`
@@ -349,7 +349,7 @@ impl<M> DomNode for StringNode<M> {
     fn split_listeners(self) -> (Self::WithoutListeners, Self::Listeners) {
         (self, empty_listeners())
     }
-    fn value(&self) -> DOMValue { DOMValue::Text(&self.0) }
+    fn value(&self) -> DomValue { DomValue::Text(&self.0) }
 }
 
 impl<M> DomNode for StringRefNode<M> {
@@ -371,7 +371,7 @@ impl<M> DomNode for StringRefNode<M> {
     fn split_listeners(self) -> (Self::WithoutListeners, Self::Listeners) {
         (self, empty_listeners())
     }
-    fn value(&self) -> DOMValue { DOMValue::Text(self.0) }
+    fn value(&self) -> DomValue { DomValue::Text(self.0) }
 }
 
 #[cfg(any(feature = "use_std", test))]

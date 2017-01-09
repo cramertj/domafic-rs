@@ -1,4 +1,4 @@
-use {DomNode, DomNodes, DOMValue};
+use {DomNode, DomNodes, DomValue};
 use processors::DomNodeProcessor;
 
 use std::marker::PhantomData;
@@ -19,7 +19,7 @@ impl<'a, M, W: io::Write> DomNodeProcessor<'a, M> for HtmlWriter<W> {
         fn add_node<W, T>(w: &mut W, node: &T) -> Result<(), io::Error>
                 where W: io::Write, T: DomNode {
             match node.value() {
-                DOMValue::Element { tag: tagname } => {
+                DomValue::Element { tag: tagname } => {
                     write!(w, "<{}", tagname)?;
                     for attr in node.attributes() {
                         write!(w, " {}=\"{}\"", attr.0, attr.1)?;
@@ -28,7 +28,7 @@ impl<'a, M, W: io::Write> DomNodeProcessor<'a, M> for HtmlWriter<W> {
                     node.children().process_all::<HtmlWriter<W>>(w)?;
                     write!(w, "</{}>", tagname)
                 }
-                DOMValue::Text(text) => {
+                DomValue::Text(text) => {
                     write!(w, "{}", text)
                 }
             }
