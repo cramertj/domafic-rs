@@ -1,15 +1,21 @@
-extern crate domafic;
-use domafic::{DOMNode, KeyIter, IntoNode};
-use domafic::tags::{button, div, h1};
-use domafic::listener::on;
-use domafic::web_render::run;
-
-enum Msg {
-    Increment,
-    Decrement,
+#[cfg(not(target_os = "emscripten"))]
+fn main() {
+    panic!("This example needs to be run in the browser via the asm.js or WebAssembly targets.")
 }
 
+#[cfg(target_os = "emscripten")]
 fn main() {
+    extern crate domafic;
+
+    use domafic::{DOMNode, KeyIter, IntoNode};
+    use domafic::tags::{button, div, h1};
+    use domafic::listener::on;
+    use domafic::web_render::run;
+
+    enum Msg {
+        Increment,
+        Decrement,
+    }
 
     let update_button = |state: &mut isize, msg: Msg, _keys: KeyIter| {
         *state = match msg {

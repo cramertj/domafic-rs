@@ -35,7 +35,6 @@ impl<F, S, R> Renderer<S> for F where F: Fn(&S) -> R, R: DOMNode {
 
 /// Runs the application (`updater`, `renderer`, `initial_state`) on the webpage under the element
 /// specified by `element_selector`.
-#[cfg(target_os = "emscripten")]
 pub fn run<D, U, R, S>(element_selector: &str, updater: U, renderer: R, initial_state: S) -> !
         where
         D: DOMNode,
@@ -46,21 +45,6 @@ pub fn run<D, U, R, S>(element_selector: &str, updater: U, renderer: R, initial_
     private::run(element_selector, updater, renderer, initial_state)
 }
 
-/// Runs the application (`updater`, `renderer`, `initial_state`) on the webpage under the element
-/// specified by `element_selector`.
-#[cfg(not(target_os = "emscripten"))]
-pub fn run<D, U, R, S>(element_selector: &str, updater: U, renderer: R, initial_state: S) -> !
-        where
-        D: DOMNode,
-        D::Message: 'static,
-        U: Updater<S, D::Message>,
-        R: Renderer<S, Rendered=D>
-{
-    let _ = (element_selector, updater, renderer, initial_state);
-    panic!("Target does not support web_render::run (requires emscripten).")
-}
-
-#[cfg(target_os = "emscripten")]
 mod private {
     extern crate libc;
 

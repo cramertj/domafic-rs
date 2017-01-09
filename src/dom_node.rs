@@ -55,6 +55,8 @@ pub trait DOMNode: Sized {
     /// use domafic::{DOMNode, KeyIter, IntoNode};
     /// use domafic::tags::div;
     /// use domafic::listener::on;
+    ///
+    /// #[cfg(target_os = "emscripten")]
     /// use domafic::web_render::run;
     ///
     /// struct Clicked;
@@ -72,7 +74,8 @@ pub trait DOMNode: Sized {
     ///    println!("div number {} was clicked", keys.next().unwrap());
     ///
     /// // If using in a browser:
-    /// // run("body", _update, _render, ());
+    /// #[cfg(target_os = "emscripten")]
+    /// run("body", _update, _render, ());
     /// ```
     fn with_key(self, key: usize) -> WithKey<Self> {
         assert!(self.key() == None, "Attempted to add multiple keys to a DOMNode");

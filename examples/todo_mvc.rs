@@ -1,31 +1,37 @@
-extern crate domafic;
-use domafic::{DOMNode, KeyIter, IntoNode};
-use domafic::AttributeValue::*;
-use domafic::tags::*;
-use domafic::listener::on;
-use domafic::web_render::run;
-
-enum Msg {
-    UpdateField(String),
-    Add(String),
-    Remove,
-    None,
+#[cfg(not(target_os = "emscripten"))]
+fn main() {
+    panic!("This example needs to be run in the browser via the asm.js or WebAssembly targets.")
 }
 
-struct TodoState {
-    entry_box: String,
-    todos: Vec<String>,
-}
-impl TodoState {
-    fn new() -> TodoState {
-        TodoState {
-            entry_box: String::new(),
-            todos: Vec::new(),
+#[cfg(target_os = "emscripten")]
+fn main() {
+
+    extern crate domafic;
+    use domafic::{DOMNode, KeyIter, IntoNode};
+    use domafic::AttributeValue::*;
+    use domafic::tags::*;
+    use domafic::listener::on;
+    use domafic::web_render::run;
+
+    enum Msg {
+        UpdateField(String),
+        Add(String),
+        Remove,
+        None,
+    }
+
+    struct TodoState {
+        entry_box: String,
+        todos: Vec<String>,
+    }
+    impl TodoState {
+        fn new() -> TodoState {
+            TodoState {
+                entry_box: String::new(),
+                todos: Vec::new(),
+            }
         }
     }
-}
-
-fn main() {
 
     let update = |state: &mut TodoState, msg: Msg, mut keys: KeyIter| {
         match msg {

@@ -150,7 +150,7 @@ pub use processors::{DOMNodes, Listeners};
 /// Types and functions for creating tag elements such as `div`s or `span`s
 pub mod tags;
 
-#[cfg(feature = "web_render")]
+#[cfg(all(feature = "web_render", target_os = "emscripten"))]
 /// Functions for interacting with a webpage when rendering client-side using asmjs or emscripten
 pub mod web_render;
 
