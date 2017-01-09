@@ -22,7 +22,7 @@
 //!
 //!     // Since we don't publish any messages, we need to create an empty node with our
 //!     // message type. This tells the compiler that our message type is `Msg`. This would
-//!     // be unnecessary if we publshed any messages or if we specified the return type of
+//!     // be unnecessary if we published any messages or if we specified the return type of
 //!     // the `render` function.
 //!     empty::<Msg>(),
 //! ));
