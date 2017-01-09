@@ -1,26 +1,26 @@
-use processors::{DOMNodes, Listeners};
+use processors::{DomNodes, Listeners};
 use KeyValue;
 use empty::{empty, empty_listeners, EmptyNodes, EmptyListeners};
 
-/// A `DOMNode` specifies the HTML DOM (Document Object Model) representation of a type.
+/// A `DomNode` specifies the HTML DOM (Document Object Model) representation of a type.
 ///
 /// Note that there can be many different types that map to the same HTML. For example, both
 /// `String` and `str` can be used to create HTML text nodes.
-pub trait DOMNode: Sized {
+pub trait DomNode: Sized {
 
     /// The type of message sent by a listener. Messages of this type should be used to update
     /// application state.
     type Message;
 
-    /// The type of the set of children contained by the `DOMNode`.
+    /// The type of the set of children contained by the `DomNode`.
     ///
     /// Examples:
     /// `Tag<...>`
     /// `(Tag<...>, Tag<...>, Tag<...>)`
     /// `[Tag<...>; 5]`
-    type Children: DOMNodes<Message=Self::Message>;
+    type Children: DomNodes<Message=Self::Message>;
 
-    /// The type of the set of listeners watching this `DOMNode` for events.
+    /// The type of the set of listeners watching this `DomNode` for events.
     ///
     /// Examples:
     /// `FnListener<...>`
@@ -28,22 +28,22 @@ pub trait DOMNode: Sized {
     /// `[Box<Listener<Message=()>>; 5]`
     type Listeners: Listeners<Message=Self::Message>;
 
-    /// The type of the `DOMNode` with its listeners replaced by `EmptyListeners`.
+    /// The type of the `DomNode` with its listeners replaced by `EmptyListeners`.
     ///
-    /// This is useful for splitting the `DOMNode` up into its listener and non-listener components
+    /// This is useful for splitting the `DomNode` up into its listener and non-listener components
     /// so that they can be transformed separately.
     type WithoutListeners:
-        DOMNode<
+        DomNode<
             Message=Self::Message,
             Children=Self::Children,
             Listeners=EmptyListeners<Self::Message>
             >;
 
     /// If present, the key will be included in the `KeyStack` returned alongside a message.
-    /// This should be used to differentiate messages from peer `DOMNode`s.
+    /// This should be used to differentiate messages from peer `DomNode`s.
     fn key(&self) -> Option<u32>;
 
-    /// Add a key to this `DOMNode`. This method will panic if the node already has a key.
+    /// Add a key to this `DomNode`. This method will panic if the node already has a key.
     ///
     /// Keys are used to differentiate between large numbers of similar components.
     /// When an event occurs in a keyed component, the keys of that component and all of its
@@ -52,7 +52,7 @@ pub trait DOMNode: Sized {
     /// Example:
     ///
     /// ```rust
-    /// use domafic::{DOMNode, KeyIter, IntoNode};
+    /// use domafic::{DomNode, KeyIter, IntoNode};
     /// use domafic::tags::div;
     /// use domafic::listener::on;
     ///
@@ -78,7 +78,7 @@ pub trait DOMNode: Sized {
     /// run("body", _update, _render, ());
     /// ```
     fn with_key(self, key: usize) -> WithKey<Self> {
-        assert!(self.key() == None, "Attempted to add multiple keys to a DOMNode");
+        assert!(self.key() == None, "Attempted to add multiple keys to a DomNode");
         WithKey(self, key as u32)
     }
 
@@ -88,23 +88,23 @@ pub trait DOMNode: Sized {
         ::html_writer::HtmlDisplayable(self)
     }
 
-    /// Get the nth attribute for a given `DOMNode`.
+    /// Get the nth attribute for a given `DomNode`.
     ///
     /// If `node.get_attribute(i)` returns `None`, `node.get_attribute(j)` should return `None`
     /// for all `j >= i`.
     fn get_attribute(&self, _index: usize) -> Option<&KeyValue>;
 
-    /// Returns an iterator over a `DOMNode`'s attributes.
+    /// Returns an iterator over a `DomNode`'s attributes.
     fn attributes(&self) -> AttributeIter<Self> {
         AttributeIter { node: self, index: 0, }
     }
 
-    /// Wrap the `DOMNode` in an additional set of attributes.
+    /// Wrap the `DomNode` in an additional set of attributes.
     ///
     /// Example:
     ///
     ///```rust
-    /// use domafic::DOMNode;
+    /// use domafic::DomNode;
     /// use domafic::empty::empty;
     /// use domafic::tags::div;
     /// use domafic::AttributeValue::Str;
@@ -122,12 +122,12 @@ pub trait DOMNode: Sized {
         WithAttributes { node: self, attributes: attributes, }
     }
 
-    /// Wrap the `DOMNode` in an additional set of liseners.
+    /// Wrap the `DomNode` in an additional set of liseners.
     ///
     /// Example:
     ///
     ///```rust
-    /// use domafic::DOMNode;
+    /// use domafic::DomNode;
     /// use domafic::empty::empty;
     /// use domafic::listener::on;
     /// use domafic::tags::div;
@@ -147,16 +147,16 @@ pub trait DOMNode: Sized {
     }
 
     // TODO once type ATCs land
-    // type Mapped<Mapper: Map<In=Self::Message>>: DOMNode<Message=Mapper::Out>
+    // type Mapped<Mapper: Map<In=Self::Message>>: DomNode<Message=Mapper::Out>
     // fn map_listeners<Mapper: Map<In=Self::Message>>(self) -> Mapped<Mapper>
 
-    /// Returns a reference to the children of this `DOMNode`
+    /// Returns a reference to the children of this `DomNode`
     fn children(&self) -> &Self::Children;
 
-    /// Returns a reference to the listeners listening for events on this `DOMNode`
+    /// Returns a reference to the listeners listening for events on this `DomNode`
     fn listeners(&self) -> &Self::Listeners;
 
-    /// Returns a reference to both the children and listeners of this `DOMNode`
+    /// Returns a reference to both the children and listeners of this `DomNode`
     fn children_and_listeners(&self) -> (&Self::Children, &Self::Listeners);
 
     /// Splits `self` into two separate components, one with and one without listeners.
@@ -169,7 +169,7 @@ pub trait DOMNode: Sized {
     fn value(&self) -> DOMValue;
 }
 
-/// "Value" of a `DOMNode`: either an element's tag name (e.g. "div"/"h1"/"body") or the text
+/// "Value" of a `DomNode`: either an element's tag name (e.g. "div"/"h1"/"body") or the text
 /// value of a text node (e.g. "Hello world!").
 pub enum DOMValue<'a> {
     /// A tag element
@@ -182,9 +182,9 @@ pub enum DOMValue<'a> {
     Text(&'a str),
 }
 
-/// A `DOMNode` with a key
-pub struct WithKey<T: DOMNode>(T, u32);
-impl<T: DOMNode> DOMNode for WithKey<T> {
+/// A `DomNode` with a key
+pub struct WithKey<T: DomNode>(T, u32);
+impl<T: DomNode> DomNode for WithKey<T> {
     type Message = T::Message;
     type Children = T::Children;
     type Listeners = T::Listeners;
@@ -210,13 +210,13 @@ impl<T: DOMNode> DOMNode for WithKey<T> {
     fn value(&self) -> DOMValue { self.0.value() }
 }
 
-/// Wrapper for `DOMNode`s that adds attributes.
-pub struct WithAttributes<T: DOMNode, A: AsRef<[KeyValue]>> {
+/// Wrapper for `DomNode`s that adds attributes.
+pub struct WithAttributes<T: DomNode, A: AsRef<[KeyValue]>> {
     node: T,
     attributes: A,
 }
 
-impl<T, A> DOMNode for WithAttributes<T, A> where T: DOMNode, A: AsRef<[KeyValue]> {
+impl<T, A> DomNode for WithAttributes<T, A> where T: DomNode, A: AsRef<[KeyValue]> {
     type Message = T::Message;
     type Children = T::Children;
     type Listeners = T::Listeners;
@@ -250,14 +250,14 @@ impl<T, A> DOMNode for WithAttributes<T, A> where T: DOMNode, A: AsRef<[KeyValue
     fn value(&self) -> DOMValue { self.node.value() }
 }
 
-/// Wrapper for `DOMNode`s that adds listeners.
-pub struct WithListeners<T: DOMNode<Message=L::Message, Listeners=EmptyListeners<L::Message>>, L: Listeners> {
+/// Wrapper for `DomNode`s that adds listeners.
+pub struct WithListeners<T: DomNode<Message=L::Message, Listeners=EmptyListeners<L::Message>>, L: Listeners> {
     node: T,
     listeners: L,
 }
 
-impl<T, L> DOMNode for WithListeners<T, L>
-    where T: DOMNode<Message=L::Message, Listeners=EmptyListeners<L::Message>>, L: Listeners
+impl<T, L> DomNode for WithListeners<T, L>
+    where T: DomNode<Message=L::Message, Listeners=EmptyListeners<L::Message>>, L: Listeners
 {
     type Message = L::Message;
     type Children = T::Children;
@@ -282,13 +282,13 @@ impl<T, L> DOMNode for WithListeners<T, L>
     fn value(&self) -> DOMValue { self.node.value() }
 }
 
-/// Iterator over the attributes of a `DOMNode`
-pub struct AttributeIter<'a, T: DOMNode + 'a> {
+/// Iterator over the attributes of a `DomNode`
+pub struct AttributeIter<'a, T: DomNode + 'a> {
     node: &'a T,
     index: usize,
 }
 
-impl<'a, T: DOMNode> Iterator for AttributeIter<'a, T> {
+impl<'a, T: DomNode> Iterator for AttributeIter<'a, T> {
     type Item = &'a KeyValue;
     fn next(&mut self) -> Option<Self::Item> {
         let res = self.node.get_attribute(self.index);
@@ -297,20 +297,20 @@ impl<'a, T: DOMNode> Iterator for AttributeIter<'a, T> {
     }
 }
 
-/// Types that can be converted into `DOMNode`s with messages of type `M`
+/// Types that can be converted into `DomNode`s with messages of type `M`
 pub trait IntoNode<M> {
     /// The type of the resulting node
-    type Node: DOMNode<Message = M>;
-    /// Consume `self` to produce a `DOMNode`
+    type Node: DomNode<Message = M>;
+    /// Consume `self` to produce a `DomNode`
     fn into_node(self) -> Self::Node;
 }
 
 #[cfg(any(feature = "use_std", test))]
-/// `DOMNode` wrapper for `String`s
+/// `DomNode` wrapper for `String`s
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct StringNode<Message>(String, EmptyNodes<Message>, EmptyListeners<Message>);
 
-/// `DOMNode` wrapper for `&'static str`s
+/// `DomNode` wrapper for `&'static str`s
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct StringRefNode<Message>(&'static str, EmptyNodes<Message>, EmptyListeners<Message>);
 
@@ -330,7 +330,7 @@ impl<M> IntoNode<M> for &'static str {
 }
 
 #[cfg(any(feature = "use_std", test))]
-impl<M> DOMNode for StringNode<M> {
+impl<M> DomNode for StringNode<M> {
     type Message = M;
     type Children = EmptyNodes<M>;
     type Listeners = EmptyListeners<M>;
@@ -352,7 +352,7 @@ impl<M> DOMNode for StringNode<M> {
     fn value(&self) -> DOMValue { DOMValue::Text(&self.0) }
 }
 
-impl<M> DOMNode for StringRefNode<M> {
+impl<M> DomNode for StringRefNode<M> {
     type Message = M;
     type Children = EmptyNodes<M>;
     type Listeners = EmptyListeners<M>;

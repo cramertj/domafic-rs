@@ -7,13 +7,13 @@
 //! A simple template:
 //!
 //! ```rust
-//! use domafic::{DOMNode, IntoNode};
+//! use domafic::{DomNode, IntoNode};
 //! use domafic::tags::{div, h1};
 //! use domafic::empty::empty;
 //!
 //! type Msg = ();
 //!
-//! // Create a function `render` from `birthday: &'static str` to `DOMNode<Message=Msg>`
+//! // Create a function `render` from `birthday: &'static str` to `DomNode<Message=Msg>`
 //! let render = |birthday: &'static str| div((
 //!     h1((
 //!         "Hello, world! Your birthday is: ".into_node(),
@@ -35,9 +35,9 @@
 //!
 //! If you've used HTML or JSX, the syntax should look familiar. Note that we didn't need
 //! to use any macros or interpreters-- the template above is just pure, allocation-free Rust. The
-//! template itself is just a function that returns a `DOMNode`. The `DOMNode` trait lets us use
-//! the result of `render` as an HTML node. We can write `DOMNode`s to HTML, render them to a live
-//! web page using Javascript, or use them as children of other `DOMNode`s.
+//! template itself is just a function that returns a `DomNode`. The `DomNode` trait lets us use
+//! the result of `render` as an HTML node. We can write `DomNode`s to HTML, render them to a live
+//! web page using Javascript, or use them as children of other `DomNode`s.
 //!
 //! Domafic's design is similar to that of popular single-state frontend frameworks such as Elm
 //! or Redux. An application consists of state, an updater, and a renderer.
@@ -124,7 +124,7 @@
 //! The reason for this is that the return type of the `render` method is long and hard
 //! to write out. If you must use named functions, consider using the nightly
 //! `conservative_impl_trait` feature, which will allow you to write the function signature of
-//! `render` like `fn render(state: &State) -> impl DOMNode<Message=Msg>`.
+//! `render` like `fn render(state: &State) -> impl DomNode<Message=Msg>`.
 
 #![cfg_attr(test, feature(conservative_impl_trait))]
 #![cfg_attr(not(any(feature = "use_std", test)), no_std)]
@@ -133,10 +133,10 @@
 
 /// Trait for elements that can be drawn as to HTML DOM nodes
 pub mod dom_node;
-pub use dom_node::{DOMNode, DOMValue, IntoNode};
+pub use dom_node::{DomNode, DOMValue, IntoNode};
 
 #[cfg(any(feature = "use_std", test))]
-/// Types, traits and functions for writing a `DOMNode` to HTML
+/// Types, traits and functions for writing a `DomNode` to HTML
 pub mod html_writer;
 
 mod keys;
@@ -144,9 +144,9 @@ pub use keys::KeyIter;
 /// Types, traits, and functions for creating event handlers
 pub mod listener;
 pub use listener::{Listener, Event, on};
-/// Traits for processing collections of `DOMNode`s or `Listener`s
+/// Traits for processing collections of `DomNode`s or `Listener`s
 pub mod processors;
-pub use processors::{DOMNodes, Listeners};
+pub use processors::{DomNodes, Listeners};
 /// Types and functions for creating tag elements such as `div`s or `span`s
 pub mod tags;
 
@@ -158,7 +158,7 @@ pub mod web_render;
 /// Example: `("key", AttributeValue::Str("value"))`
 pub type KeyValue = (&'static str, AttributeValue);
 
-/// A value of a `DOMNode` attribute.
+/// A value of a `DomNode` attribute.
 #[derive(Debug, Clone, Hash, Eq, PartialEq)]
 pub enum AttributeValue {
     /// A value represented by a static string reference
@@ -191,13 +191,13 @@ impl std::fmt::Display for AttributeValue {
     }
 }
 
-/// Types and functions for creating `DOMNodes` or `Listeners` with no runtime representation.
+/// Types and functions for creating `DomNodes` or `Listeners` with no runtime representation.
 pub mod empty {
     #[cfg(not(any(feature = "use_std", test)))]
     extern crate core as std;
     use std::marker::PhantomData;
 
-    use super::processors::{DOMNodes, DOMNodeProcessor, Listeners, ListenerProcessor};
+    use super::processors::{DomNodes, DomNodeProcessor, Listeners, ListenerProcessor};
 
     /// An empty set of nodes with no children or attributes.
     /// Instances of this type have no DOM representation.
@@ -207,9 +207,9 @@ pub mod empty {
     /// Creates a new `EmptyNodes`.
     pub fn empty<Message>() -> EmptyNodes<Message> { EmptyNodes(PhantomData) }
 
-    impl<M> DOMNodes for EmptyNodes<M> {
+    impl<M> DomNodes for EmptyNodes<M> {
         type Message = M;
-        fn process_all<'a, P: DOMNodeProcessor<'a, M>>(&'a self, _acc: &mut P::Acc) -> Result<(), P::Error> {
+        fn process_all<'a, P: DomNodeProcessor<'a, M>>(&'a self, _acc: &mut P::Acc) -> Result<(), P::Error> {
             Ok(())
         }
     }
@@ -231,10 +231,10 @@ pub mod empty {
 
 #[cfg(test)]
 mod tests {
-    use super::{DOMNode, DOMValue, KeyValue, IntoNode};
+    use super::{DomNode, DOMValue, KeyValue, IntoNode};
     use super::AttributeValue::Str;
     use super::tags::*;
-    use super::processors::{DOMNodes, DOMNodeProcessor};
+    use super::processors::{DomNodes, DomNodeProcessor};
     use super::empty::{empty, empty_listeners, EmptyNodes, EmptyListeners};
     use super::html_writer::HtmlWriter;
 
@@ -247,7 +247,7 @@ mod tests {
 
     struct BogusOne(EmptyNodes<Never>, EmptyListeners<Never>);
     const BOGUS_1: BogusOne = BogusOne(EmptyNodes(PhantomData), EmptyListeners(PhantomData));
-    impl DOMNode for BogusOne {
+    impl DomNode for BogusOne {
         type Message = Never;
         type Children = EmptyNodes<Self::Message>;
         type Listeners = EmptyListeners<Self::Message>;
@@ -271,7 +271,7 @@ mod tests {
 
     struct BogusTwo(EmptyNodes<Never>, EmptyListeners<Never>);
     const BOGUS_2: BogusTwo = BogusTwo(EmptyNodes(PhantomData), EmptyListeners(PhantomData));
-    impl DOMNode for BogusTwo {
+    impl DomNode for BogusTwo {
         type Message = Never;
         type Children = EmptyNodes<Self::Message>;
         type Listeners = EmptyListeners<Self::Message>;
@@ -297,12 +297,12 @@ mod tests {
     struct ChildCounter;
     #[derive(Debug, Clone, Copy)]
     enum Never {}
-    impl<'a, M> DOMNodeProcessor<'a, M> for ChildCounter {
+    impl<'a, M> DomNodeProcessor<'a, M> for ChildCounter {
         type Acc = usize;
         type Error = Never;
 
-        fn get_processor<T: DOMNode>() -> fn(&mut Self::Acc, &'a T) -> Result<(), Never> {
-            fn incr<'a, T: DOMNode>(count: &mut usize, _node: &'a T) -> Result<(), Never> {
+        fn get_processor<T: DomNode>() -> fn(&mut Self::Acc, &'a T) -> Result<(), Never> {
+            fn incr<'a, T: DomNode>(count: &mut usize, _node: &'a T) -> Result<(), Never> {
                 *count += 1;
                 Ok(())
             }
@@ -310,7 +310,7 @@ mod tests {
         }
     }
 
-    fn html_sample() -> impl DOMNode<Message = Never> {
+    fn html_sample() -> impl DomNode<Message = Never> {
         div ((
             attributes([("attr", Str("value"))]),
             (
@@ -328,7 +328,7 @@ mod tests {
     }
 
     #[cfg(feature = "use_either_n")]
-    fn html_either(include_rows: bool) -> impl DOMNode<Message = Never> {
+    fn html_either(include_rows: bool) -> impl DomNode<Message = Never> {
         div((
             table((
                 if include_rows {
@@ -436,7 +436,7 @@ mod tests {
         );
     }
 
-    fn check_attribute_list<T: DOMNode>(div: T) {
+    fn check_attribute_list<T: DomNode>(div: T) {
         assert_eq!(div.get_attribute(0), Some(&("attr1", Str("val1"))));
         assert_eq!(div.get_attribute(1), Some(&("attr2", Str("val2"))));
         assert_eq!(div.get_attribute(2), Some(&("attr3", Str("val3"))));

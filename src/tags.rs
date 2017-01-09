@@ -1,16 +1,16 @@
 /// Tags, such as `div` or `table`.
 ///
-/// To create a `Tag` `DOMNode`, simply import the tag function
+/// To create a `Tag` `DomNode`, simply import the tag function
 /// and call it with a type that implements `Into<TagProperties>`.
 ///
 /// Example:
 ///
 /// TODO
 
-use {DOMNode, DOMNodes, DOMValue, KeyValue, Listeners};
+use {DomNode, DomNodes, DOMValue, KeyValue, Listeners};
 use empty::{empty, EmptyNodes, empty_listeners, EmptyListeners};
 
-/// Properties used to create a `Tag` `DOMNode`.
+/// Properties used to create a `Tag` `DomNode`.
 ///
 /// This is primarily used as an input (via `Into<TagProperties>`) for the various tag functions.
 /// Note the large number of `From/Into` impls for this struct. Thes allows users to avoid fully
@@ -19,7 +19,7 @@ use empty::{empty, EmptyNodes, empty_listeners, EmptyListeners};
 ///
 /// Note that multiple listeners or multiple children must be grouped into a single tuple.
 pub struct TagProperties<
-    Children: DOMNodes,
+    Children: DomNodes,
     Attributes: AsRef<[KeyValue]>,
     Listens: Listeners<Message=Children::Message>>
 {
@@ -38,7 +38,7 @@ type EmptyAttrs = [KeyValue; 0];
 /// Example:
 ///
 /// ```rust
-/// use domafic::DOMNode;
+/// use domafic::DomNode;
 /// use domafic::empty::empty;
 /// use domafic::tags::{attributes, div};
 /// use domafic::AttributeValue::Str;
@@ -70,7 +70,7 @@ impl<M> From<()> for TagProperties<EmptyNodes<M>, EmptyAttrs, EmptyListeners<M>>
 }
 
 // Just children
-impl<C: DOMNodes> From<C> for TagProperties<C, EmptyAttrs, EmptyListeners<C::Message>> {
+impl<C: DomNodes> From<C> for TagProperties<C, EmptyAttrs, EmptyListeners<C::Message>> {
     fn from(nodes: C) -> TagProperties<C, EmptyAttrs, EmptyListeners<C::Message>> {
         TagProperties {
             children: nodes,
@@ -109,7 +109,7 @@ impl<L: Listeners> From<L> for TagProperties<EmptyNodes<L::Message>, EmptyAttrs,
 }
 
 // (attributes, children)
-impl<C: DOMNodes, A: AsRef<[KeyValue]>>
+impl<C: DomNodes, A: AsRef<[KeyValue]>>
     From<(Attrs<A>, C)> for TagProperties<C, A, EmptyListeners<C::Message>>
 {
     fn from(props: (Attrs<A>, C)) -> TagProperties<C, A, EmptyListeners<C::Message>> {
@@ -151,7 +151,7 @@ impl<A: AsRef<[KeyValue]>, L: Listeners>
 }
 
 // (listeners, children)
-impl<C: DOMNodes, L: Listeners<Message=<C as DOMNodes>::Message>>
+impl<C: DomNodes, L: Listeners<Message=<C as DomNodes>::Message>>
     From<(L, C)> for TagProperties<C, EmptyAttrs, L>
 {
     fn from(props: (L, C)) -> TagProperties<C, EmptyAttrs, L> {
@@ -165,7 +165,7 @@ impl<C: DOMNodes, L: Listeners<Message=<C as DOMNodes>::Message>>
 }
 
 // (attributes, listeners, children)
-impl<C: DOMNodes, A: AsRef<[KeyValue]>, L: Listeners<Message=<C as DOMNodes>::Message>>
+impl<C: DomNodes, A: AsRef<[KeyValue]>, L: Listeners<Message=<C as DomNodes>::Message>>
     From<(Attrs<A>, L, C)> for TagProperties<C, A, L>
 {
     fn from(props: (Attrs<A>, L, C)) -> TagProperties<C, A, L> {
@@ -179,7 +179,7 @@ impl<C: DOMNodes, A: AsRef<[KeyValue]>, L: Listeners<Message=<C as DOMNodes>::Me
 }
 
 // (listeners, attributes, children)
-impl<C: DOMNodes, A: AsRef<[KeyValue]>, L: Listeners<Message=<C as DOMNodes>::Message>>
+impl<C: DomNodes, A: AsRef<[KeyValue]>, L: Listeners<Message=<C as DomNodes>::Message>>
     From<(L, Attrs<A>, C)> for TagProperties<C, A, L>
 {
     fn from(props: (L, Attrs<A>, C)) -> TagProperties<C, A, L> {
@@ -195,7 +195,7 @@ impl<C: DOMNodes, A: AsRef<[KeyValue]>, L: Listeners<Message=<C as DOMNodes>::Me
 /// A tag element, such as `div` or `span`.
 #[derive(Debug, Copy, Clone, Hash, Eq, PartialEq)]
 pub struct Tag<
-    Children: DOMNodes,
+    Children: DomNodes,
     Attributes: AsRef<[KeyValue]>,
     L: Listeners<Message=Children::Message>>
 {
@@ -206,7 +206,7 @@ pub struct Tag<
     listeners: L,
 }
 
-impl<C: DOMNodes, A: AsRef<[KeyValue]>, L: Listeners<Message=C::Message>> DOMNode for Tag<C, A, L> {
+impl<C: DomNodes, A: AsRef<[KeyValue]>, L: Listeners<Message=C::Message>> DomNode for Tag<C, A, L> {
     type Message = C::Message;
     type Children = C;
     type Listeners = L;
@@ -249,7 +249,7 @@ use std::fmt;
 #[cfg(feature = "use_std")]
 impl<C, A, L> fmt::Display for Tag<C, A, L>
     where
-    C: DOMNodes,
+    C: DomNodes,
     A: AsRef<[KeyValue]>,
     L: Listeners<Message=C::Message>
 {
@@ -268,7 +268,7 @@ macro_rules! impl_tags {
         /// `div((...attributes..., ...children..))`, `div((...attributes..., ...listeners...))`
         /// and more.
         pub fn $tagname<
-            C: DOMNodes,
+            C: DomNodes,
             A: AsRef<[KeyValue]>,
             L: Listeners<Message=C::Message>,
             T: Into<TagProperties<C, A, L>>

@@ -7,7 +7,7 @@ fn main() {
 
 #[cfg(target_os = "emscripten")]
 fn main() {
-    use domafic::{DOMNode, KeyIter, IntoNode};
+    use domafic::{DomNode, KeyIter, IntoNode};
     use domafic::tags::{button, div, h1};
     use domafic::listener::on;
     use domafic::web_render::run;

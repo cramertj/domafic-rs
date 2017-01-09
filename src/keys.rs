@@ -29,7 +29,7 @@ impl Keys {
     }
 }
 
-/// An iterator over keys into a `DOMNode` tree.
+/// An iterator over keys into a `DomNode` tree.
 pub struct KeyIter(Keys, u32);
 
 impl Iterator for KeyIter {

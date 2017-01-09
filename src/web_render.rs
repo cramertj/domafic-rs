@@ -1,4 +1,4 @@
-use DOMNode;
+use DomNode;
 use keys::KeyIter;
 
 /// `Updater`s modify the current application state based on messages.
@@ -14,19 +14,19 @@ impl<F, S, M> Updater<S, M> for F where F: Fn(&mut S, M, KeyIter) -> () {
     }
 }
 
-/// `Renderer`s convert the current state to the current UI `DOMNode`.
+/// `Renderer`s convert the current state to the current UI `DomNode`.
 pub trait Renderer<State> {
 
-    // Note: this should really be Rendered<'a>: DOMNode + 'a
+    // Note: this should really be Rendered<'a>: DomNode + 'a
     // to allow for references to bits of state, but this is
     // impossible without ATCs
-    /// Type of the rendered `DOMNode`
-    type Rendered: DOMNode;
+    /// Type of the rendered `DomNode`
+    type Rendered: DomNode;
 
-    /// Renders a `DOMNode` given the current application state
+    /// Renders a `DomNode` given the current application state
     fn render(&self, &State) -> Self::Rendered;
 }
-impl<F, S, R> Renderer<S> for F where F: Fn(&S) -> R, R: DOMNode {
+impl<F, S, R> Renderer<S> for F where F: Fn(&S) -> R, R: DomNode {
     type Rendered = R;
     fn render(&self, state: &S) -> Self::Rendered {
         (self)(state)
@@ -37,7 +37,7 @@ impl<F, S, R> Renderer<S> for F where F: Fn(&S) -> R, R: DOMNode {
 /// specified by `element_selector`.
 pub fn run<D, U, R, S>(element_selector: &str, updater: U, renderer: R, initial_state: S) -> !
         where
-        D: DOMNode,
+        D: DomNode,
         D::Message: 'static,
         U: Updater<S, D::Message>,
         R: Renderer<S, Rendered=D>
@@ -49,9 +49,9 @@ mod private {
     extern crate libc;
 
     use super::{Updater, Renderer};
-    use {DOMNode, DOMValue, Event, KeyValue, Listener};
+    use {DomNode, DOMValue, Event, KeyValue, Listener};
     use keys::Keys;
-    use processors::{DOMNodes, Listeners, DOMNodeProcessor, ListenerProcessor};
+    use processors::{DomNodes, Listeners, DomNodeProcessor, ListenerProcessor};
 
     use std::ffi::{CString, CStr};
     use std::marker::PhantomData;
@@ -59,13 +59,13 @@ mod private {
 
     pub fn run<D, U, R, S>(element_selector: &str, updater: U, renderer: R, initial_state: S) -> !
         where
-        D: DOMNode,
+        D: DomNode,
         D::Message: 'static,
         U: Updater<S, D::Message>,
         R: Renderer<S, Rendered=D>
     {
         unsafe {
-            // Get initial DOMNode
+            // Get initial DomNode
             let rendered = renderer.render(&initial_state);
 
             // Initialize the browser system
@@ -83,7 +83,7 @@ mod private {
                 updater,
                 renderer,
                 initial_state,
-                VDOMNode {
+                VDomNode {
                     value: VNodeValue::Tag("N/A - root"),
                     keys: Keys::new(),
                     web_element: root_node_element,
@@ -92,9 +92,9 @@ mod private {
                     children: Vec::new(),
                 }
             );
-            let app_system_mut_ptr = (&mut app_system) as *mut (D, U, R, S, VDOMNode<D::Message>);
+            let app_system_mut_ptr = (&mut app_system) as *mut (D, U, R, S, VDomNode<D::Message>);
 
-            // Draw initial DOMNode to browser
+            // Draw initial DomNode to browser
             let mut node_index = 0;
             let mut input = WebWriterAcc {
                 system_ptr: app_system_mut_ptr,
@@ -267,15 +267,15 @@ mod private {
     )
         where
         (D, U, R, S): Sized,
-        D: DOMNode,
+        D: DomNode,
         D::Message: 'static,
         U: Updater<S, D::Message>,
         R: Renderer<S, Rendered=D>
     {
         let listener_ref: &mut Listener<Message=D::Message> =
             mem::transmute((listener_data_c_ptr, listener_vtable_c_ptr));
-        let system_ptr: *mut (D, U, R, S, VDOMNode<D::Message>) = mem::transmute(system_c_ptr);
-        let system_ref: &mut (D, U, R, S, VDOMNode<D::Message>) = system_ptr.as_mut().unwrap();
+        let system_ptr: *mut (D, U, R, S, VDomNode<D::Message>) = mem::transmute(system_c_ptr);
+        let system_ref: &mut (D, U, R, S, VDomNode<D::Message>) = system_ptr.as_mut().unwrap();
 
         let type_str = if (type_str_ptr as usize) != 0 {
             str::from_utf8(CStr::from_ptr(type_str_ptr).to_bytes()).ok()
@@ -352,10 +352,10 @@ mod private {
         // Update state
         updater.update(state, message, keys.into_iter());
 
-        // Render new DOMNode
+        // Render new DomNode
         *rendered = renderer.render(state);
 
-        // Write new DOMNode to root element
+        // Write new DomNode to root element
         {
             let mut node_index = 0;
             let mut input = WebWriterAcc {
@@ -449,12 +449,12 @@ mod private {
             &self,
             event_name: &str,
             listener_ptr: *const Listener<Message=D::Message>,
-            system_ptr: *mut (D, U, R, S, VDOMNode<D::Message>),
+            system_ptr: *mut (D, U, R, S, VDomNode<D::Message>),
             keys: Keys,
         ) -> WebElement
             where
             (D, U, R, S): Sized, // Make sure *mut (D, U, R, S) is a thin ptr
-            D: DOMNode,
+            D: DomNode,
             D::Message: 'static,
             U: Updater<S, D::Message>,
             R: Renderer<S, Rendered=D>
@@ -638,7 +638,7 @@ mod private {
         Tag(&'static str),
     }
     #[derive(Debug)]
-    struct VDOMNode<Message: 'static> {
+    struct VDomNode<Message: 'static> {
         value: VNodeValue,
         keys: Keys,
         web_element: WebElement,
@@ -646,13 +646,13 @@ mod private {
         listeners: Vec<(WebElement, *const Listener<Message=Message>, &'static str)>,
         children: VDOMLevel<Message>,
     }
-    type VDOMLevel<Message: 'static> = Vec<VDOMNode<Message>>;
+    type VDOMLevel<Message: 'static> = Vec<VDomNode<Message>>;
 
     struct WebWriter<'a, 'n, D, U, R, S>(
         PhantomData<(&'a (), &'n (), D, U, R, S)>
     );
-    struct WebWriterAcc<'n, D: DOMNode, U, R, S> where D::Message: 'static {
-        system_ptr: *mut (D, U, R, S, VDOMNode<D::Message>),
+    struct WebWriterAcc<'n, D: DomNode, U, R, S> where D::Message: 'static {
+        system_ptr: *mut (D, U, R, S, VDomNode<D::Message>),
         keys: Keys,
         document: WebDocument,
         parent_element: &'n WebElement,
@@ -660,9 +660,9 @@ mod private {
         node_index: &'n mut usize,
     }
 
-    impl<'a, 'n, D, U, R, S> DOMNodeProcessor<'a, D::Message> for WebWriter<'a, 'n, D, U, R, S>
+    impl<'a, 'n, D, U, R, S> DomNodeProcessor<'a, D::Message> for WebWriter<'a, 'n, D, U, R, S>
         where
-        D: DOMNode,
+        D: DomNode,
         D::Message: 'static,
         U: Updater<S, D::Message>,
         R: Renderer<S, Rendered=D>
@@ -670,13 +670,13 @@ mod private {
         type Acc = WebWriterAcc<'n, D, U, R, S>;
         type Error = ();
 
-        fn get_processor<T: DOMNode<Message=D::Message>>() -> fn(&mut Self::Acc, &'a T) -> Result<(), Self::Error> {
+        fn get_processor<T: DomNode<Message=D::Message>>() -> fn(&mut Self::Acc, &'a T) -> Result<(), Self::Error> {
             fn add_node<'a, 'n, T, D, U, R, S>(
                 acc: &mut WebWriterAcc<'n, D, U, R, S>,
                 node: &'a T) -> Result<(), ()>
                 where
-                T: DOMNode<Message=D::Message>,
-                D: DOMNode,
+                T: DomNode<Message=D::Message>,
+                D: DomNode,
                 D::Message: 'static,
                 U: Updater<S, D::Message>,
                 R: Renderer<S, Rendered=D>
@@ -856,7 +856,7 @@ mod private {
                         vnode_attributes.push(attr.clone());
                     }
 
-                    let mut vnode = VDOMNode {
+                    let mut vnode = VDomNode {
                         value: vnode_value,
                         keys: keys,
                         web_element: html_element,
