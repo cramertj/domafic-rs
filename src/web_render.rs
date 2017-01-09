@@ -71,7 +71,10 @@ mod private {
             // Initialize the browser system
             let document = web_init();
             let root_node_element =
-                document.element_from_selector(element_selector).unwrap();
+                document.element_from_selector(element_selector)
+                    .expect(&format!(
+                        "Target element of `run` was not found: {}", element_selector));
+
             root_node_element.remove_all_children();
 
             // Lives forever on the stack, referenced and mutated in callbacks
@@ -101,6 +104,7 @@ mod private {
                 node_level: &mut (*app_system_mut_ptr).4.children,
                 node_index: &mut node_index,
             };
+
             (*app_system_mut_ptr).0.process_all::<WebWriter<D, U, R, S>>(&mut input).unwrap();
 
             run_main_web_loop()
