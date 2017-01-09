@@ -1,3 +1,5 @@
+extern crate domafic;
+
 #[cfg(not(target_os = "emscripten"))]
 fn main() {
     panic!("This example needs to be run in the browser via the asm.js or WebAssembly targets.")
@@ -5,8 +7,6 @@ fn main() {
 
 #[cfg(target_os = "emscripten")]
 fn main() {
-
-    extern crate domafic;
     use domafic::{DOMNode, KeyIter, IntoNode};
     use domafic::AttributeValue::*;
     use domafic::tags::*;
