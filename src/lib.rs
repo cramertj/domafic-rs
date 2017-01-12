@@ -310,7 +310,7 @@ mod tests {
         }
     }
 
-    fn html_sample() -> impl DomNode<Message = Never> {
+    fn html_sample() -> impl DomNode<Message = Never> + 'static {
         div ((
             attributes([("attr", Str("value"))]),
             (
@@ -328,7 +328,7 @@ mod tests {
     }
 
     #[cfg(feature = "use_either_n")]
-    fn html_either(include_rows: bool) -> impl DomNode<Message = Never> {
+    fn html_either(include_rows: bool) -> impl DomNode<Message = Never> + 'static {
         div((
             table((
                 if include_rows {

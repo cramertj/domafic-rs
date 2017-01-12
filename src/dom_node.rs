@@ -312,7 +312,7 @@ pub struct StringNode<Message>(String, EmptyNodes<Message>, EmptyListeners<Messa
 
 /// `DomNode` wrapper for `&'static str`s
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
-pub struct StringRefNode<Message>(&'static str, EmptyNodes<Message>, EmptyListeners<Message>);
+pub struct StringRefNode<'a, Message>(&'a str, EmptyNodes<Message>, EmptyListeners<Message>);
 
 #[cfg(any(feature = "use_std", test))]
 impl<M> IntoNode<M> for String {
@@ -322,8 +322,8 @@ impl<M> IntoNode<M> for String {
     }
 }
 
-impl<M> IntoNode<M> for &'static str {
-    type Node = StringRefNode<M>;
+impl<'a, M> IntoNode<M> for &'a str {
+    type Node = StringRefNode<'a, M>;
     fn into_node(self) -> Self::Node {
         self.into()
     }
@@ -352,7 +352,7 @@ impl<M> DomNode for StringNode<M> {
     fn value(&self) -> DomValue { DomValue::Text(&self.0) }
 }
 
-impl<M> DomNode for StringRefNode<M> {
+impl<'a, M> DomNode for StringRefNode<'a, M> {
     type Message = M;
     type Children = EmptyNodes<M>;
     type Listeners = EmptyListeners<M>;
@@ -379,6 +379,6 @@ impl<Message> From<String> for StringNode<Message> {
     fn from(string: String) -> Self { StringNode(string, empty(), empty_listeners()) }
 }
 
-impl<Message> From<&'static str> for StringRefNode<Message> {
-    fn from(string: &'static str) -> Self { StringRefNode(string, empty(), empty_listeners()) }
+impl<'a, Message> From<&'a str> for StringRefNode<'a, Message> {
+    fn from(string: &'a str) -> Self { StringRefNode(string, empty(), empty_listeners()) }
 }
