@@ -1,4 +1,8 @@
 language: rust
+script: 
+  - cargo build --verbose
+  - cargo build --verbose --no-default-features
+  - cargo test
 sudo: false
 
 rust:
