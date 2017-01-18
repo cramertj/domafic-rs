@@ -45,7 +45,7 @@ impl<'a, T: DomNode> fmt::Display for HtmlDisplayable<'a, T> {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         // TODO the extra string allocation here is almost certainly avoidable
         let mut string_buffer = Vec::new();
-        self.0.process_all::<HtmlWriter<Vec<u8>>>(&mut string_buffer)
+        self.0.write_html(&mut string_buffer)
             .map_err(|_| fmt::Error)?;
         let string = String::from_utf8(string_buffer)
             .map_err(|_| fmt::Error)?;

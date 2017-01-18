@@ -167,6 +167,13 @@ pub trait DomNode: Sized {
     /// Returns an enum representing either the node's HTML tag or, in the case of a text node,
     /// the node's text value.
     fn value(&self) -> DomValue;
+
+    /// Writes the `DomNode`'s HTML representation to `writer`.
+    #[cfg(any(feature = "use_std", test))]
+    fn write_html<W: ::std::io::Write>(&self, writer: &mut W) -> ::std::io::Result<()> {
+        use html_writer::HtmlWriter;
+        self.process_all::<HtmlWriter<W>>(writer)
+    }
 }
 
 /// "Value" of a `DomNode`: either an element's tag name (e.g. "div"/"h1"/"body") or the text
