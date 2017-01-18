@@ -161,10 +161,14 @@ pub type KeyValue = (&'static str, AttributeValue);
 /// A value of a `DomNode` attribute.
 #[derive(Debug, Clone, Hash, Eq, PartialEq)]
 pub enum AttributeValue {
+
     /// A value represented by a static string reference
     Str(&'static str),
+
     /// A value represented by an owned `String`
+    #[cfg(any(feature = "use_std", test))]
     OwnedStr(String),
+
     /// A boolean value
     Bool(bool),
 
@@ -174,9 +178,10 @@ pub enum AttributeValue {
 impl AttributeValue {
     /// Extracts a string slice representing the contents.
     /// If the value is a `Bool`, this method returns "true" or "false".
-    fn as_str(&self) -> &str {
+    pub fn as_str(&self) -> &str {
         match *self {
             AttributeValue::Str(value) => value,
+            #[cfg(any(feature = "use_std", test))]
             AttributeValue::OwnedStr(ref value) => value,
             AttributeValue::Bool(true) => "true",
             AttributeValue::Bool(false) => "false",
@@ -191,11 +196,14 @@ impl std::fmt::Display for AttributeValue {
     }
 }
 
+
 /// Types and functions for creating `DomNodes` or `Listeners` with no runtime representation.
 pub mod empty {
     #[cfg(not(any(feature = "use_std", test)))]
     extern crate core as std;
-    use std::marker::PhantomData;
+    #[cfg(any(feature = "use_std", test))]
+    use std;
+    use self::std::marker::PhantomData;
 
     use super::processors::{DomNodes, DomNodeProcessor, Listeners, ListenerProcessor};
 
