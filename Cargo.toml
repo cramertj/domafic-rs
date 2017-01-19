@@ -14,9 +14,10 @@ keywords = ["web", "ui", "javascript", "framework", "template"]
 [dependencies]
 either_n = { version = "0.2.0", optional = true }
 libc = { version = "0.2.16", optional = true }
+marksman_escape = { version = "0.1.2", optional = true }
 
 [features]
 default = ["use_either_n", "use_std", "web_render"]
 use_either_n = ["either_n"]
-use_std = []
+use_std = ["marksman_escape"]
 web_render = ["libc", "use_std"]

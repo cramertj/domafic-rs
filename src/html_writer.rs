@@ -1,3 +1,6 @@
+extern crate marksman_escape;
+use self::marksman_escape::Escape;
+
 use {DomNode, DomNodes, DomValue};
 use processors::DomNodeProcessor;
 
@@ -29,7 +32,10 @@ impl<'a, M, W: io::Write> DomNodeProcessor<'a, M> for HtmlWriter<W> {
                     write!(w, "</{}>", tagname)
                 }
                 DomValue::Text(text) => {
-                    write!(w, "{}", text)
+                    for escaped_u8 in Escape::new(text.bytes()) {
+                        w.write(&[escaped_u8])?;
+                    }
+                    Ok(())
                 }
             }
         }

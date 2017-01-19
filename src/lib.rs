@@ -7,7 +7,7 @@
 //! A simple template:
 //!
 //! ```rust
-//! use domafic::{DomNode, IntoNode};
+//! use domafic::IntoNode;
 //! use domafic::tags::{div, h1};
 //! use domafic::empty::empty;
 //!
@@ -28,7 +28,7 @@
 //! ));
 //!
 //! assert_eq!(
-//!     "<div><h1>Hello, world! Your birthday is: Christmas</h1></div>".to_string(),
+//!     "<div><h1>Hello, world&#33; Your birthday is: Christmas</h1></div>".to_string(),
 //!     render("Christmas").to_string()
 //! );
 //! ```
@@ -244,7 +244,6 @@ mod tests {
     use super::tags::*;
     use super::processors::{DomNodes, DomNodeProcessor};
     use super::empty::{empty, empty_listeners, EmptyNodes, EmptyListeners};
-    use super::html_writer::HtmlWriter;
 
     #[cfg(feature = "use_either_n")]
     extern crate either_n;
@@ -326,7 +325,7 @@ mod tests {
             BOGUS_1,
             BOGUS_2,
             table ((
-                "something".into_node(),
+                "something&".into_node(),
                 th (empty()),
                 tr (empty()),
                 tr (empty()),
@@ -353,12 +352,9 @@ mod tests {
 
     #[cfg(feature = "use_either_n")]
     fn builds_an_either_string(arg: bool, expected: &'static str) {
-        let mut string_buffer = Vec::new();
-        html_either(arg).process_all::<HtmlWriter<Vec<u8>>>(&mut string_buffer).unwrap();
-        let string = String::from_utf8(string_buffer).unwrap();
         assert_eq!(
             without_whitespace(expected.to_string()),
-            without_whitespace(string)
+            without_whitespace(html_either(arg).displayable().to_string())
         );
     }
 
@@ -423,9 +419,7 @@ mod tests {
 
     #[test]
     fn builds_string() {
-        let mut string_buffer = Vec::new();
-        html_sample().process_all::<HtmlWriter<Vec<u8>>>(&mut string_buffer).unwrap();
-        let string = String::from_utf8(string_buffer).unwrap();
+        let string = html_sample().displayable().to_string();
         assert_eq!(
             without_whitespace(r#"
             <div attr="value">
@@ -433,7 +427,7 @@ mod tests {
                 <bogus_tag_one></bogus_tag_one>
                 <bogus_tag_two></bogus_tag_two>
                 <table>
-                    something
+                    something&amp;
                     <th></th>
                     <tr></tr>
                     <tr></tr>
