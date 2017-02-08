@@ -1,7 +1,6 @@
 use processors::{Listeners, ListenerProcessor};
 
-// TODO make it possible to add fields w/o API breakage
-// Consider single private field and unexported `new` fn.
+// TODO make it possible to add fields w/o API breakage-- blocked on pub(restricted)
 /// Description of a `DOM` event that caused a listener to be called.
 #[derive(Debug, Copy, Clone, Hash, Eq, PartialEq)]
 pub struct Event<'a> {
@@ -31,8 +30,10 @@ pub struct Event<'a> {
 
 /// `Listener`s listen to events and convert them into a message
 pub trait Listener<Message> {
+
     /// Type of event handled by this `Listener`. Example: "click".
     fn event_type_handled(&self) -> &'static str;
+
     /// Handle a given event, producing a message
     fn handle_event(&self, Event) -> Message;
 }

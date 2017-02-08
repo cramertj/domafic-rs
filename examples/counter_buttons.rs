@@ -10,14 +10,14 @@ fn main() {
     use domafic::{DomNode, KeyIter};
     use domafic::tags::{button, div, h1};
     use domafic::listener::on;
-    use domafic::web_render::run;
+    use domafic::web_render::{run, JsIo};
 
     enum Msg {
         Increment,
         Decrement,
     }
 
-    let update_button = |state: &mut isize, msg: Msg, _keys: KeyIter| {
+    let update_button = |state: &mut isize, msg: Msg| {
         *state = match msg {
             Msg::Increment => *state + 1,
             Msg::Decrement => *state - 1,
@@ -38,9 +38,9 @@ fn main() {
         ))
     };
 
-    let update = |state: &mut Vec<isize>, msg: Msg, mut keys: KeyIter| {
+    let update = |state: &mut Vec<isize>, msg: Msg, mut keys: KeyIter, _: &JsIo<Msg>| {
         let key = keys.next().unwrap();
-        update_button(&mut state[key], msg, keys)
+        update_button(&mut state[key], msg)
     };
 
     let render = |state: &Vec<isize>| {

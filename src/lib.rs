@@ -53,7 +53,7 @@
 //!
 //! // If rendering client-side with asm.js or WebAssembly:
 //! #[cfg(target_os = "emscripten")]
-//! use domafic::web_render::run;
+//! use domafic::web_render::{run, JsIo};
 //! #[cfg(target_os = "emscripten")]
 //! use domafic::KeyIter;
 //!
@@ -65,7 +65,7 @@
 //! }
 //!
 //! #[cfg(target_os = "emscripten")]
-//! let update = |state: &mut State, msg: Msg, _keys: KeyIter| {
+//! let update = |state: &mut State, msg: Msg, _: KeyIter, _: &JsIo<Msg>| {
 //!     *state = match msg {
 //!         Msg::Increment => *state + 1,
 //!         Msg::Decrement => *state - 1,

@@ -2,15 +2,24 @@ use DomNode;
 use keys::KeyIter;
 
 /// `Updater`s modify the current application state based on messages.
-pub trait Updater<State, Message> {
+pub trait Updater<State, Message>: Sized {
     /// Modify the application state based on a message.
     ///
     /// `KeyIter` may be used to identify which component the message originated from.
-    fn update(&self, &mut State, Message, KeyIter) -> ();
+    fn update(&self, &mut State, Message, KeyIter, &JsIo<Message>);
 }
-impl<F, S, M> Updater<S, M> for F where F: Fn(&mut S, M, KeyIter) -> () {
-    fn update(&self, state: &mut S, msg: M, keys: KeyIter) -> () {
-        (self)(state, msg, keys)
+
+impl<F, S, M> Updater<S, M> for F
+    where F: Fn(&mut S, M, KeyIter, &JsIo<M>) -> ()
+{
+    fn update(
+        &self,
+        state: &mut S,
+        msg: M,
+        keys: KeyIter,
+        js_io: &JsIo<M>
+    ) {
+        (self)(state, msg, keys, js_io)
     }
 }
 
@@ -26,6 +35,7 @@ pub trait Renderer<State, Message> {
     /// Renders a `DomNode` given the current application state
     fn render(&self, &State) -> Self::Rendered;
 }
+
 impl<F, S, R, M> Renderer<S, M> for F where F: Fn(&S) -> R, R: DomNode<M> {
     type Rendered = R;
     fn render(&self, state: &S) -> Self::Rendered {
@@ -33,19 +43,10 @@ impl<F, S, R, M> Renderer<S, M> for F where F: Fn(&S) -> R, R: DomNode<M> {
     }
 }
 
-/// Runs the application (`updater`, `renderer`, `initial_state`) on the webpage under the element
-/// specified by `element_selector`.
-pub fn run<D, M, U, R, S>(element_selector: &str, updater: U, renderer: R, initial_state: S) -> !
-        where
-        D: DomNode<M>,
-        M: 'static,
-        U: Updater<S, M>,
-        R: Renderer<S, M, Rendered=D>
-{
-    private::run(element_selector, updater, renderer, initial_state)
-}
+pub use self::private::{run, JsIo, HttpRequest, HttpResponse, HttpResult};
 
 mod private {
+
     extern crate libc;
 
     use super::{Updater, Renderer};
@@ -58,6 +59,8 @@ mod private {
     use std::marker::PhantomData;
     use std::{mem, ptr, str};
 
+    /// Runs the application (`updater`, `renderer`, `initial_state`) on the webpage under the element
+    /// specified by `element_selector`.
     pub fn run<D, M, U, R, S>(element_selector: &str, updater: U, renderer: R, initial_state: S) -> !
         where
         D: DomNode<M>,
@@ -110,6 +113,247 @@ mod private {
 
             run_main_web_loop()
         }
+    }
+
+    struct JsIoImpl<D, M, U, R, S>
+        where
+        D: DomNode<M>,
+        M: 'static,
+        U: Updater<S, M>,
+        R: Renderer<S, M>
+    {
+        app_system: *mut (D, U, R, S, VDomNode<M>)
+    }
+
+    /// A single HTTP request
+    #[derive(Debug, Copy, Clone)]
+    pub struct HttpRequest<'a> {
+        /// HTTP Method ("GET", "POST", etc.)
+        pub method: &'a str,
+        /// A list of HTTP header (key, value) pairs
+        pub headers: &'a [(&'a str, &'a str)],
+        /// Request URL
+        pub url: &'a str,
+        /// Request body
+        pub body: &'a str,
+        /// Optional request timeout in milliseconds
+        pub timeout_millis: Option<u32>,
+    }
+
+    /// HTTP request `Result` indicating a possible network error or timeout
+    pub type HttpResult<'a> = Result<HttpResponse<'a>, HttpError>;
+
+    /// A single HTTP response
+    #[derive(Debug, Copy, Clone)]
+    pub struct HttpResponse<'a> {
+        /// HTTP status
+        pub status_code: u16,
+        /// HTTP status text
+        pub status_text: &'a str,
+        /// A list of HTTP response header (key, value) pairs
+        pub headers: &'a [(&'a str, &'a str)],
+        /// The body of the HTTP response
+        pub body: &'a str,
+    }
+
+    /// HTTP request error indicating either a network connection error or a timeout
+    #[derive(Debug, Copy, Clone)]
+    pub enum HttpError {
+        NetworkError,
+        Timeout,
+    }
+
+    /// Handler for an HTTP response
+    pub trait HttpResponseHandler: 'static {
+        type Message;
+        fn handle<'a>(&self, HttpResult<'a>) -> Self::Message;
+    }
+    impl<F, Message> HttpResponseHandler for F
+        where F: for<'a> Fn(HttpResult<'a>) -> Message + 'static
+    {
+        type Message = Message;
+        fn handle<'a>(&self, response: HttpResult<'a>) -> Message {
+            (self)(response)
+        }
+    }
+
+    /// JavaScript IO interface
+    pub trait JsIo<Message> {
+        /// Issue an asynchronous HTTP request
+        fn http<'b> (
+            &self,
+            http_request: HttpRequest<'b>,
+            handler: Box<HttpResponseHandler<Message=Message>>,
+        );
+    }
+
+    impl<D, M, U, R, S> JsIo<M> for JsIoImpl<D, M, U, R, S>
+        where
+        D: DomNode<M>,
+        M: 'static,
+        U: Updater<S, M>,
+        R: Renderer<S, M, Rendered=D>
+    {
+        fn http<'b> (
+            &self,
+            http_request: HttpRequest<'b>,
+            handler: Box<HttpResponseHandler<Message=M>>,
+        ) {
+            JsIoImpl::http(self, http_request, handler)
+        }
+    }
+
+    impl<D, M, U, R, S> JsIoImpl<D, M, U, R, S>
+        where
+        D: DomNode<M>,
+        M: 'static,
+        U: Updater<S, M>,
+        R: Renderer<S, M, Rendered=D>
+    {
+        fn http<'b> (
+            &self,
+            http_request: HttpRequest<'b>,
+            handler: Box<HttpResponseHandler<Message=M>>,
+        ) {
+            unsafe {
+                let HttpRequest { method, headers, url, body, timeout_millis } = http_request;
+                let method_cstring = CString::new(method).unwrap();
+                let url_cstring = CString::new(url).unwrap();
+                let body_cstring = CString::new(body).unwrap();
+
+                let header_key_cstrings: Vec<CString> =
+                headers.iter().map(|header| CString::new(header.0).unwrap()).collect();
+
+                let header_key_pointers: Vec<libc::c_int> =
+                header_key_cstrings.iter().map(|cstring|
+                    cstring.as_ptr() as libc::c_int).collect();
+
+                let header_value_cstrings: Vec<CString> =
+                headers.iter().map(|header| CString::new(header.1).unwrap()).collect();
+
+                let header_value_pointers: Vec<libc::c_int> =
+                header_value_cstrings.iter().map(|cstring|
+                    cstring.as_ptr() as libc::c_int).collect();
+
+                let handler_ptr = Box::into_raw(handler);
+
+                let (handler_data_ptr, handler_vtable_ptr):
+                    (*const libc::c_void, *const libc::c_void) =
+                    mem::transmute(handler_ptr);
+
+                const JS: &'static [u8] = b"\
+                    var handler_fn_ptr = $0;\
+                    var app_system = $1;\
+                    var method = UTF8ToString($2);\
+                    var url = UTF8ToString($3);\
+                    var body = UTF8ToString($4);\
+                    var header_len = $5;\
+                    var header_key_ptr = $6;\
+                    var header_value_ptr = $7;\
+                    var timeout = $8;\
+                    var handler_data_ptr = $9;\
+                    var handler_vtable_ptr = $10;\
+                    var xhr = new XMLHttpRequest();\
+                    var error_fn = function(error_sig) { return function() {\
+                        Runtime.dynCall('viiiiiiii', handler_fn_ptr, [error_sig, app_system, handler_data_ptr, handler_vtable_ptr, 0, 0, 0, 0]);\
+                    } };\
+                    xhr.addEventListener('timeout', error_fn(1));\
+                    xhr.addEventListener('error', error_fn(2));\
+                    xhr.addEventListener('load', function() {\
+                        var stack = Runtime.stackSave();\
+                        var status_code = xhr.status;\
+                        var status_text = allocate(\
+                            intArrayFromString(xhr.statusText), 'i8', ALLOC_STACK\
+                        );\
+                        var response_headers = allocate(\
+                            intArrayFromString(xhr.getAllResponseHeaders()), 'i8', ALLOC_STACK\
+                        );\
+                        var response_body =\
+                            allocate(intArrayFromString(xhr.responseText), 'i8', ALLOC_STACK);\
+                        Runtime.dynCall('viiiiiiii', handler_fn_ptr, [0, app_system, handler_data_ptr, handler_vtable_ptr, status_code, status_text, response_body, response_headers]);\
+                        Runtime.stackRestore(stack);\
+                    });\
+                    try { xhr.open(method, url, true); } catch (e) { error_fn(3); return; }\
+                    for (var i = 0; i < header_len; i++) {\
+                        var header_key = UTF8ToString(getValue(header_key_ptr + (i * 4), '*'));\
+                        var header_value = UTF8ToString(getValue(header_value_ptr + (i * 4), '*'));\
+                        xhr.setRequestHeader(header_key, header_value);\
+                    }\
+                    xhr.responseType = 'text';\
+                    if (timeout != 0) { xhr.timeout = timeout; }\
+                    xhr.send(body);\
+                \0";
+
+                emscripten_asm_const_int(
+                    &JS[0] as *const _ as *const libc::c_char,
+                    handle_http_result::<D, M, U, R, S> as *const libc::c_void,
+                    self.app_system as *const libc::c_void,
+                    method_cstring.as_ptr() as libc::c_int,
+                    url_cstring.as_ptr() as libc::c_int,
+                    body_cstring.as_ptr() as libc::c_int,
+                    header_key_pointers.len() as libc::c_int,
+                    header_key_pointers.as_ptr() as *const _ as *const libc::c_char,
+                    header_value_pointers.as_ptr() as *const _ as *const libc::c_char,
+                    timeout_millis.unwrap_or(0) as libc::c_int,
+                    handler_data_ptr,
+                    handler_vtable_ptr,
+                );
+            }
+        }
+    }
+
+    unsafe extern fn handle_http_result<D, M, U, R, S>
+    (
+        error_sig: libc::c_int,
+        system_c_ptr: *mut libc::c_void,
+        handler_data_ptr: *const libc::c_void,
+        handler_vtable_ptr: *const libc::c_void,
+        status_code: u16,
+        status_text: *const libc::c_char,
+        body: *const libc::c_char,
+        headers_ptr: *const libc::c_char
+    )
+        where
+        D: DomNode<M>,
+        M: 'static,
+        U: Updater<S, M>,
+        R: Renderer<S, M, Rendered=D>,
+    {
+        let handler_ptr: *mut HttpResponseHandler<Message=M> =
+            mem::transmute((handler_data_ptr, handler_vtable_ptr));
+        let handler = Box::from_raw(handler_ptr);
+
+        let status_text = str::from_utf8(CStr::from_ptr(status_text).to_bytes()).unwrap();
+
+        let headers;
+        let response_result = match error_sig {
+            0 => {
+                let headers_str = str::from_utf8(CStr::from_ptr(headers_ptr).to_bytes()).unwrap();
+                headers = headers_str.split("\r\n").flat_map(|header| {
+                    header.find(':').map(|split_index| {
+                        let (key, value) = header.split_at(split_index);
+                        (key.trim(), value[1..].trim())
+                    })
+                }).collect::<Vec<_>>();
+
+                Ok(HttpResponse {
+                    status_code: status_code,
+                    status_text: status_text,
+                    headers: &headers,
+                    body: str::from_utf8(CStr::from_ptr(body).to_bytes()).unwrap(),
+                })
+            },
+
+            1 => Err(HttpError::Timeout),
+
+            2 => Err(HttpError::NetworkError),
+
+            _ => unreachable!(),
+        };
+
+        let message = handler.handle(response_result);
+
+        update_system::<D, M, U, R, S>(system_c_ptr, message, Keys::new());
     }
 
     extern "C" {
@@ -219,7 +463,7 @@ mod private {
         listener_data_c_ptr: *const libc::c_void,
         listener_vtable_c_ptr: *const libc::c_void,
         system_c_ptr: *mut libc::c_void,
-        //
+
         type_str_ptr: *const libc::c_char,
         target_value_ptr: *const libc::c_char,
         client_x: libc::c_int,
@@ -231,7 +475,7 @@ mod private {
         alt_key: libc::c_int,
         ctrl_key: libc::c_int,
         meta_key: libc::c_int,
-        //
+
         keys_size: libc::c_uint,
         key_1: libc::c_uint,
         key_2: libc::c_uint,
@@ -272,11 +516,10 @@ mod private {
         M: 'static,
         U: Updater<S, M>,
         R: Renderer<S, M, Rendered=D>
+
     {
         let listener_ref: &mut Listener<M> =
             mem::transmute((listener_data_c_ptr, listener_vtable_c_ptr));
-        let system_ptr: *mut (D, U, R, S, VDomNode<M>) = mem::transmute(system_c_ptr);
-        let system_ref: &mut (D, U, R, S, VDomNode<M>) = system_ptr.as_mut().unwrap();
 
         let type_str = if (type_str_ptr as usize) != 0 {
             str::from_utf8(CStr::from_ptr(type_str_ptr).to_bytes()).ok()
@@ -341,6 +584,25 @@ mod private {
         };
 
         let message = listener_ref.handle_event(event);
+        update_system(system_c_ptr, message, keys);
+    }
+
+    unsafe fn update_system<D, M, U, R, S>
+    (
+        system_c_ptr: *mut libc::c_void,
+        message: M,
+        keys: Keys
+    )
+        where
+        (D, U, R, S): Sized,
+        D: DomNode<M>,
+        M: 'static,
+        U: Updater<S, M>,
+        R: Renderer<S, M, Rendered=D>,
+    {
+
+        let system_ptr: *mut (D, U, R, S, VDomNode<M>) = mem::transmute(system_c_ptr);
+        let system_ref: &mut (D, U, R, S, VDomNode<M>) = system_ptr.as_mut().unwrap();
 
         let (
             ref mut rendered,
@@ -351,9 +613,10 @@ mod private {
         ) = *system_ref;
 
         // Update state
-        updater.update(state, message, keys.into_iter());
+        updater.update(state, message, keys.into_iter(), &JsIoImpl { app_system: system_ptr });
 
         // Render new DomNode
+        // TODO: fix unsafety due to possible `panic` in `render`
         ptr::drop_in_place(rendered);
         ptr::write(rendered, renderer.render(state));
 

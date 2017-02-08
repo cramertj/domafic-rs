@@ -11,7 +11,7 @@ fn main() {
     use domafic::AttributeValue::*;
     use domafic::tags::*;
     use domafic::listener::on;
-    use domafic::web_render::run;
+    use domafic::web_render::{run, JsIo};
 
     enum Msg {
         UpdateField(String),
@@ -33,7 +33,7 @@ fn main() {
         }
     }
 
-    let update = |state: &mut TodoState, msg: Msg, mut keys: KeyIter| {
+    let update = |state: &mut TodoState, msg: Msg, mut keys: KeyIter, _: &JsIo<Msg>| {
         match msg {
             Msg::UpdateField(value) => {
                 state.entry_box = value
