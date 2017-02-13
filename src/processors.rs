@@ -12,8 +12,6 @@ pub trait DomNodeProcessor<'a, Message> {
     type Error;
 
     /// Returns a folding function capable of processing elements of type `T: DomNode`.
-    ///
-    /// TODO: Example
     fn get_processor<T: DomNode<Message=Message>>()
         -> fn(&mut Self::Acc, &'a T) -> Result<(), Self::Error>;
 }

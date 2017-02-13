@@ -380,6 +380,19 @@ mod tests {
     }
 
     #[test]
+    fn nonstatic_nodes() {
+        fn str_div<'a>(str_val: &'a str) -> impl DomNode<Message = Never> + 'a {
+            div (
+                str_val.into_node()
+            )
+        }
+
+        let hello_string = "hello".to_string();
+        let hello_div = str_div(&hello_string);
+        assert_eq!("<div>hello</div>".to_string(), hello_div.displayable().to_string());
+    }
+
+    #[test]
     fn counts_children() {
         let mut count = 0;
         (BOGUS_1, BOGUS_1, BOGUS_2).process_all::<ChildCounter>(&mut count).unwrap();
