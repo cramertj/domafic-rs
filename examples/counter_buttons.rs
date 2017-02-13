@@ -7,7 +7,7 @@ fn main() {
 
 #[cfg(target_os = "emscripten")]
 fn main() {
-    use domafic::{DomNode, KeyIter, IntoNode};
+    use domafic::{DomNode, KeyIter};
     use domafic::tags::{button, div, h1};
     use domafic::listener::on;
     use domafic::web_render::run;
@@ -28,12 +28,12 @@ fn main() {
         div ((
             button ((
                 on("click", |_| Msg::Decrement),
-                "-".into_node(),
+                "-",
             )),
-            state.to_string().into_node(),
+            state.to_string(),
             button ((
                 on("click", |_| Msg::Increment),
-                "+".into_node(),
+                "+",
             )),
         ))
     };
@@ -45,7 +45,7 @@ fn main() {
 
     let render = |state: &Vec<isize>| {
         div ((
-            h1("Hello from rust!".into_node()),
+            h1("Hello from rust!"),
             state
                 .iter().enumerate()
                 .map(|(index, count)| render_button(count).with_key(index))

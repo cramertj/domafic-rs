@@ -1,3 +1,5 @@
+use processors::{Listeners, ListenerProcessor};
+
 // TODO make it possible to add fields w/o API breakage
 // Consider single private field and unexported `new` fn.
 /// Description of a `DOM` event that caused a listener to be called.
@@ -28,13 +30,11 @@ pub struct Event<'a> {
 }
 
 /// `Listener`s listen to events and convert them into a message
-pub trait Listener {
-    /// Type of messages created
-    type Message;
+pub trait Listener<Message> {
     /// Type of event handled by this `Listener`. Example: "click".
     fn event_type_handled(&self) -> &'static str;
     /// Handle a given event, producing a message
-    fn handle_event(&self, Event) -> Self::Message;
+    fn handle_event(&self, Event) -> Message;
 }
 
 /// A listener that consists of an event type and a function from `Event` to message
@@ -43,12 +43,17 @@ pub struct FnListener<M, F: Fn(Event) -> M> {
     f: F,
 }
 
-impl<M, F: Fn(Event) -> M> Listener for FnListener<M, F> {
-    type Message = M;
+impl<M, F: Fn(Event) -> M> Listeners<M> for FnListener<M, F> {
+    fn process_all<'a, P: ListenerProcessor<'a, M>>(&'a self, acc: &mut P::Acc) -> Result<(), P::Error> {
+        P::get_processor()(acc, self)
+    }
+}
+
+impl<M, F: Fn(Event) -> M> Listener<M> for FnListener<M, F> {
     fn event_type_handled(&self) -> &'static str {
         self.event_type_handled
     }
-    fn handle_event(&self, event: Event) -> Self::Message {
+    fn handle_event(&self, event: Event) -> M {
         (self.f)(event)
     }
 }

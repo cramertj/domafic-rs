@@ -1,5 +1,7 @@
 use {DomNode, Listener};
 
+use opt_std::marker::PhantomData;
+
 /// `DomNodeProcessor`s are used to iterate over `DomNode`s which may or may not be the same type.
 /// Implementations of this trait resemble traditional `fold` functions, modifying an accumulator
 /// (of type `Acc`) and returning an error as necessary.
@@ -12,18 +14,15 @@ pub trait DomNodeProcessor<'a, Message> {
     type Error;
 
     /// Returns a folding function capable of processing elements of type `T: DomNode`.
-    fn get_processor<T: DomNode<Message=Message>>()
+    fn get_processor<T: DomNode<Message>>()
         -> fn(&mut Self::Acc, &'a T) -> Result<(), Self::Error>;
 }
 
 /// Collection of `DomNode`s with a common message type
-pub trait DomNodes {
-    /// Type of messages published by the nodes' listeners in response to events
-    type Message;
-
+pub trait DomNodes<Message> {
     /// Processes all of the `DomNode`s in the given collection using processor `P` and
     /// accumulator `acc`.
-    fn process_all<'a, P: DomNodeProcessor<'a, Self::Message>>(&'a self, acc: &mut P::Acc) -> Result<(), P::Error>;
+    fn process_all<'a, P: DomNodeProcessor<'a, Message>>(&'a self, acc: &mut P::Acc) -> Result<(), P::Error>;
 }
 
 /// `ListenerProcessor`s are used to iterate over `Listeners`s which may or may not be the same
@@ -40,40 +39,38 @@ pub trait ListenerProcessor<'a, Message> {
     /// Returns a folding function capable of processing elements of type `T: DomNode`.
     ///
     /// TODO: Example
-    fn get_processor<T: Listener<Message=Message>>() -> fn(&mut Self::Acc, &'a T) -> Result<(), Self::Error>;
+    fn get_processor<T: Listener<Message>>() -> fn(&mut Self::Acc, &'a T) -> Result<(), Self::Error>;
 }
 
 /// Collection of `Listener`s with a common message type
-pub trait Listeners {
-    /// Type of messages publishd by the listeners in response to events
-    type Message;
-
+pub trait Listeners<Message> {
     /// Processes all of the listeners in the given collection using processor `P` and
     /// accumulator `acc`.
-    fn process_all<'a, P: ListenerProcessor<'a, Self::Message>>(&'a self, acc: &mut P::Acc) -> Result<(), P::Error>;
+    fn process_all<'a, P: ListenerProcessor<'a, Message>>(&'a self, acc: &mut P::Acc) -> Result<(), P::Error>;
 }
 
-impl<T: DomNode> DomNodes for T {
-    type Message = T::Message;
-    fn process_all<'a, P: DomNodeProcessor<'a, Self::Message>>(&'a self, acc: &mut P::Acc) -> Result<(), P::Error> {
-        P::get_processor()(acc, self)
+impl<Message> DomNodes<Message> for () {
+    fn process_all<'a, P: DomNodeProcessor<'a, Message>>(&'a self, _acc: &mut P::Acc) -> Result<(), P::Error> {
+        Ok(())
     }
 }
 
-impl<T: Listener> Listeners for T {
-    type Message = T::Message;
-    fn process_all<'a, P: ListenerProcessor<'a, Self::Message>>(&'a self, acc: &mut P::Acc) -> Result<(), P::Error> {
-        P::get_processor()(acc, self)
+impl<M> DomNodes<M> for PhantomData<M> {
+    fn process_all<'a, P: DomNodeProcessor<'a, M>>(&'a self, _acc: &mut P::Acc) -> Result<(), P::Error> {
+        Ok(())
     }
-
-    // TODO once type ATCs land
-    // type Mapped<Mapper: Map<In=Self::Message>>: Listeners<Message=Mapper::Out>
-    // fn map<Mapper: Map<In=Self::Message>>(self) -> Mapped<Mapper>
 }
 
-impl<T: DomNodes> DomNodes for Option<T> {
-    type Message = T::Message;
-    fn process_all<'a, P: DomNodeProcessor<'a, Self::Message>>(&'a self, acc: &mut P::Acc) -> Result<(), P::Error> {
+/// Zero-sized empty collection of listeners
+pub struct EmptyListeners;
+impl<Message> Listeners<Message> for EmptyListeners {
+    fn process_all<'a, P: ListenerProcessor<'a, Message>>(&'a self, _acc: &mut P::Acc) -> Result<(), P::Error> {
+        Ok(())
+    }
+}
+
+impl<Message, T: DomNodes<Message>> DomNodes<Message> for Option<T> {
+    fn process_all<'a, P: DomNodeProcessor<'a, Message>>(&'a self, acc: &mut P::Acc) -> Result<(), P::Error> {
         if let Some(ref inner) = *self {
             inner.process_all::<P>(acc)
         } else {
@@ -82,9 +79,8 @@ impl<T: DomNodes> DomNodes for Option<T> {
     }
 }
 
-impl<L: Listeners> Listeners for Option<L> {
-    type Message = L::Message;
-    fn process_all<'a, P: ListenerProcessor<'a, Self::Message>>(&'a self, acc: &mut P::Acc) -> Result<(), P::Error> {
+impl<Message, L: Listeners<Message>> Listeners<Message> for Option<L> {
+    fn process_all<'a, P: ListenerProcessor<'a, Message>>(&'a self, acc: &mut P::Acc) -> Result<(), P::Error> {
         if let Some(ref inner) = *self {
             inner.process_all::<P>(acc)
         } else {
@@ -93,9 +89,8 @@ impl<L: Listeners> Listeners for Option<L> {
     }
 }
 
-impl<T: DomNodes> DomNodes for [T] {
-    type Message = T::Message;
-    fn process_all<'a, P: DomNodeProcessor<'a, Self::Message>>(&'a self, acc: &mut P::Acc) -> Result<(), P::Error> {
+impl<Message, T: DomNodes<Message>> DomNodes<Message> for [T] {
+    fn process_all<'a, P: DomNodeProcessor<'a, Message>>(&'a self, acc: &mut P::Acc) -> Result<(), P::Error> {
         for x in self {
             x.process_all::<P>(acc)?;
         }
@@ -103,20 +98,8 @@ impl<T: DomNodes> DomNodes for [T] {
     }
 }
 
-impl<T: Listeners> Listeners for [T] {
-    type Message = T::Message;
-    fn process_all<'a, P: ListenerProcessor<'a, Self::Message>>(&'a self, acc: &mut P::Acc) -> Result<(), P::Error> {
-        for x in self {
-            x.process_all::<P>(acc)?;
-        }
-        Ok(())
-    }
-}
-
-#[cfg(any(feature = "use_std", test))]
-impl<T: DomNodes> DomNodes for Vec<T> {
-    type Message = T::Message;
-    fn process_all<'a, P: DomNodeProcessor<'a, Self::Message>>(&'a self, acc: &mut P::Acc) -> Result<(), P::Error> {
+impl<Message, T: Listeners<Message>> Listeners<Message> for [T] {
+    fn process_all<'a, P: ListenerProcessor<'a, Message>>(&'a self, acc: &mut P::Acc) -> Result<(), P::Error> {
         for x in self {
             x.process_all::<P>(acc)?;
         }
@@ -125,9 +108,18 @@ impl<T: DomNodes> DomNodes for Vec<T> {
 }
 
 #[cfg(any(feature = "use_std", test))]
-impl<T: Listeners> Listeners for Vec<T> {
-    type Message = T::Message;
-    fn process_all<'a, P: ListenerProcessor<'a, Self::Message>>(&'a self, acc: &mut P::Acc) -> Result<(), P::Error> {
+impl<Message, T: DomNodes<Message>> DomNodes<Message> for Vec<T> {
+    fn process_all<'a, P: DomNodeProcessor<'a, Message>>(&'a self, acc: &mut P::Acc) -> Result<(), P::Error> {
+        for x in self {
+            x.process_all::<P>(acc)?;
+        }
+        Ok(())
+    }
+}
+
+#[cfg(any(feature = "use_std", test))]
+impl<Message, T: Listeners<Message>> Listeners<Message> for Vec<T> {
+    fn process_all<'a, P: ListenerProcessor<'a, Message>>(&'a self, acc: &mut P::Acc) -> Result<(), P::Error> {
         for x in self {
             x.process_all::<P>(acc)?;
         }
@@ -137,9 +129,8 @@ impl<T: Listeners> Listeners for Vec<T> {
 
 macro_rules! array_impls {
     ($($len:expr,)*) => { $(
-        impl<T: DomNodes> DomNodes for [T; $len] {
-            type Message = T::Message;
-            fn process_all<'a, P: DomNodeProcessor<'a, Self::Message>>(&'a self, acc: &mut P::Acc) -> Result<(), P::Error> {
+        impl<M, T: DomNodes<M>> DomNodes<M> for [T; $len] {
+            fn process_all<'a, P: DomNodeProcessor<'a, M>>(&'a self, acc: &mut P::Acc) -> Result<(), P::Error> {
                 for x in self {
                     x.process_all::<P>(acc)?;
                 }
@@ -147,9 +138,8 @@ macro_rules! array_impls {
             }
         }
 
-        impl<T: Listeners> Listeners for [T; $len] {
-            type Message = T::Message;
-            fn process_all<'a, P: ListenerProcessor<'a, Self::Message>>(&'a self, acc: &mut P::Acc) -> Result<(), P::Error> {
+        impl<M, T: Listeners<M>> Listeners<M> for [T; $len] {
+            fn process_all<'a, P: ListenerProcessor<'a, M>>(&'a self, acc: &mut P::Acc) -> Result<(), P::Error> {
                 for x in self {
                     x.process_all::<P>(acc)?;
                 }
@@ -188,13 +178,12 @@ macro_rules! tuple_impls {
 
     // Finally expand into the implementation
     ([($idx:tt, $typ:ident); $( ($nidx:tt, $ntyp:ident); )*]) => {
-        impl<$typ, $( $ntyp ),*> DomNodes for ($typ, $( $ntyp ),*)
-            where $typ: DomNodes,
-                  $( $ntyp: DomNodes<Message=$typ::Message>),*
+        impl<M, $typ, $( $ntyp ),*> DomNodes<M> for ($typ, $( $ntyp ),*)
+            where $typ: DomNodes<M>,
+                  $( $ntyp: DomNodes<M>),*
         {
-            type Message = $typ::Message;
             fn process_all<'a, P>(&'a self, acc: &mut P::Acc) -> Result<(), P::Error>
-                    where P: DomNodeProcessor<'a, Self::Message> {
+                    where P: DomNodeProcessor<'a, M> {
                 &self.$idx.process_all::<P>(acc)?;
                 $(
                     &self.$nidx.process_all::<P>(acc)?;
@@ -203,13 +192,12 @@ macro_rules! tuple_impls {
             }
         }
 
-        impl<$typ, $( $ntyp ),*> Listeners for ($typ, $( $ntyp ),*)
-            where $typ: Listeners,
-                  $( $ntyp: Listeners<Message=$typ::Message>),*
+        impl<M, $typ, $( $ntyp ),*> Listeners<M> for ($typ, $( $ntyp ),*)
+            where $typ: Listeners<M>,
+                  $( $ntyp: Listeners<M>),*
         {
-            type Message = $typ::Message;
             fn process_all<'a, P>(&'a self, acc: &mut P::Acc) -> Result<(), P::Error>
-                    where P: ListenerProcessor<'a, Self::Message> {
+                    where P: ListenerProcessor<'a, M> {
                 &self.$idx.process_all::<P>(acc)?;
                 $(
                     &self.$nidx.process_all::<P>(acc)?;
@@ -246,13 +234,12 @@ mod either_impls {
         (($enum_name_head:ident, $n_head:ident),
         $(($enum_name_tail:ident, $n_tail:ident),)*) => {
 
-            impl<$n_head, $( $n_tail ),*> DomNodes for
+            impl<M, $n_head, $( $n_tail ),*> DomNodes<M> for
                 $enum_name_head<$n_head, $( $n_tail ),*>
-                where $n_head: DomNodes, $( $n_tail: DomNodes<Message=$n_head::Message> ),*
+                where $n_head: DomNodes<M>, $( $n_tail: DomNodes<M> ),*
             {
-                type Message = $n_head::Message;
                 fn process_all<'a, P>(&'a self, acc: &mut P::Acc) -> Result<(), P::Error>
-                        where P: DomNodeProcessor<'a, Self::Message> {
+                        where P: DomNodeProcessor<'a, M> {
                     match *self {
                         $enum_name_head::$n_head(ref value) =>
                             value.process_all::<P>(acc)?,
@@ -265,13 +252,12 @@ mod either_impls {
                 }
             }
 
-            impl<$n_head, $( $n_tail ),*> Listeners for
+            impl<M, $n_head, $( $n_tail ),*> Listeners<M> for
                 $enum_name_head<$n_head, $( $n_tail ),*>
-                where $n_head: Listeners, $( $n_tail: Listeners<Message=$n_head::Message> ),*
+                where $n_head: Listeners<M>, $( $n_tail: Listeners<M> ),*
             {
-                type Message = $n_head::Message;
                 fn process_all<'a, P>(&'a self, acc: &mut P::Acc) -> Result<(), P::Error>
-                        where P: ListenerProcessor<'a, Self::Message> {
+                        where P: ListenerProcessor<'a, M> {
                     match *self {
                         $enum_name_head::$n_head(ref value) =>
                             value.process_all::<P>(acc)?,

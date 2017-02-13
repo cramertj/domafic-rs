@@ -7,24 +7,22 @@
 //! A simple template:
 //!
 //! ```rust
-//! use domafic::IntoNode;
 //! use domafic::tags::{div, h1};
-//! use domafic::empty::empty;
+//! use std::marker::PhantomData;
 //!
 //! type Msg = ();
 //!
 //! // Create a function `render` from `birthday: &'static str` to `DomNode<Message=Msg>`
 //! let render = |birthday: &'static str| div((
 //!     h1((
-//!         "Hello, world! Your birthday is: ".into_node(),
-//!         birthday.into_node(),
+//!         "Hello, world! Your birthday is: ", birthday,
 //!     )),
 //!
 //!     // Since we don't publish any messages, we need to create an empty node with our
 //!     // message type. This tells the compiler that our message type is `Msg`. This would
 //!     // be unnecessary if we published any messages or if we specified the return type of
 //!     // the `render` function.
-//!     empty::<Msg>(),
+//!     PhantomData::<Msg>,
 //! ));
 //!
 //! assert_eq!(
@@ -50,7 +48,6 @@
 //! For example, here is a simple example showing a counter and +/- buttons:
 //!
 //! ```rust
-//! use domafic::IntoNode;
 //! use domafic::tags::{button, div, h1};
 //! use domafic::listener::on;
 //!
@@ -77,15 +74,15 @@
 //!
 //! let render = |state: &State| {
 //!     div ((
-//!         h1("Hello from rust!".into_node()),
+//!         h1("Hello from rust!"),
 //!         button ((
 //!             on("click", |_| Msg::Decrement),
-//!             "-".into_node(),
+//!             "-",
 //!         )),
-//!         state.to_string().into_node(),
+//!         state.to_string(),
 //!         button ((
 //!             on("click", |_| Msg::Increment),
-//!             "+".into_node(),
+//!             "+",
 //!         )),
 //!     ))
 //! };
@@ -133,10 +130,10 @@
 
 /// Trait for elements that can be drawn as to HTML DOM nodes
 pub mod dom_node;
-pub use dom_node::{DomNode, DomValue, IntoNode};
+pub use dom_node::{DomNode, DomValue};
 
-#[cfg(any(feature = "use_std", test))]
 /// Types, traits and functions for writing a `DomNode` to HTML
+#[cfg(any(feature = "use_std", test))]
 pub mod html_writer;
 
 mod keys;
@@ -150,8 +147,8 @@ pub use processors::{DomNodes, Listeners};
 /// Types and functions for creating tag elements such as `div`s or `span`s
 pub mod tags;
 
-#[cfg(all(feature = "web_render", target_os = "emscripten"))]
 /// Functions for interacting with a webpage when rendering client-side using asmjs or emscripten
+#[cfg(all(feature = "web_render", target_os = "emscripten"))]
 pub mod web_render;
 
 /// A mapping between an attribute key and value.
@@ -196,54 +193,22 @@ impl std::fmt::Display for AttributeValue {
     }
 }
 
-
-/// Types and functions for creating `DomNodes` or `Listeners` with no runtime representation.
-pub mod empty {
+mod opt_std {
     #[cfg(not(any(feature = "use_std", test)))]
-    extern crate core as std;
+    pub extern crate core as std;
+    #[cfg(not(any(feature = "use_std", test)))]
+    pub use self::std::*;
+
     #[cfg(any(feature = "use_std", test))]
-    use std;
-    use self::std::marker::PhantomData;
-
-    use super::processors::{DomNodes, DomNodeProcessor, Listeners, ListenerProcessor};
-
-    /// An empty set of nodes with no children or attributes.
-    /// Instances of this type have no DOM representation.
-    #[derive(Copy, Clone, Debug, Hash, Eq, PartialEq, Ord, PartialOrd)]
-    pub struct EmptyNodes<Message>(pub PhantomData<Message>);
-
-    /// Creates a new `EmptyNodes`.
-    pub fn empty<Message>() -> EmptyNodes<Message> { EmptyNodes(PhantomData) }
-
-    impl<M> DomNodes for EmptyNodes<M> {
-        type Message = M;
-        fn process_all<'a, P: DomNodeProcessor<'a, M>>(&'a self, _acc: &mut P::Acc) -> Result<(), P::Error> {
-            Ok(())
-        }
-    }
-
-    /// An empty set of listeners.
-    /// Instances of this type have no DOM representation.
-    #[derive(Copy, Clone, Debug, Hash, Eq, PartialEq, Ord, PartialOrd)]
-    pub struct EmptyListeners<Message>(pub PhantomData<Message>);
-
-    /// Creates a new `EmptyListeners`.
-    pub fn empty_listeners<Message>() -> EmptyListeners<Message> { EmptyListeners(PhantomData) }
-    impl<M> Listeners for EmptyListeners<M> {
-        type Message = M;
-        fn process_all<'a, P: ListenerProcessor<'a, Self::Message>>(&self, _acc: &mut P::Acc) -> Result<(), P::Error> {
-            Ok(())
-        }
-    }
+    pub use std::*;
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{DomNode, DomValue, KeyValue, IntoNode};
+    use super::{DomNode, DomNodes, DomValue, KeyValue};
     use super::AttributeValue::Str;
     use super::tags::*;
-    use super::processors::{DomNodes, DomNodeProcessor};
-    use super::empty::{empty, empty_listeners, EmptyNodes, EmptyListeners};
+    use super::processors::{DomNodeProcessor, EmptyListeners};
 
     #[cfg(feature = "use_either_n")]
     extern crate either_n;
@@ -252,21 +217,28 @@ mod tests {
 
     use std::marker::PhantomData;
 
-    struct BogusOne(EmptyNodes<Never>, EmptyListeners<Never>);
-    const BOGUS_1: BogusOne = BogusOne(EmptyNodes(PhantomData), EmptyListeners(PhantomData));
-    impl DomNode for BogusOne {
-        type Message = Never;
-        type Children = EmptyNodes<Self::Message>;
-        type Listeners = EmptyListeners<Self::Message>;
+    static EMPTY_NODES_REF: &'static () = &();
+    static EMPTY_LISTN_REF: &'static EmptyListeners = &EmptyListeners;
+
+
+    struct BogusOne;
+    impl<M> DomNodes<M> for BogusOne {
+        fn process_all<'a, P: DomNodeProcessor<'a, M>>(&'a self, acc: &mut P::Acc) -> Result<(), P::Error> {
+            P::get_processor()(acc, self)
+        }
+    }
+    impl<M> DomNode<M> for BogusOne {
+        type Children = ();
+        type Listeners = EmptyListeners;
         type WithoutListeners = BogusOne;
 
-        fn children(&self) -> &Self::Children { &self.0 }
-        fn listeners(&self) -> &Self::Listeners { &self.1 }
+        fn children(&self) -> &Self::Children { EMPTY_NODES_REF }
+        fn listeners(&self) -> &Self::Listeners { EMPTY_LISTN_REF }
         fn children_and_listeners(&self) -> (&Self::Children, &Self::Listeners) {
-            (&self.0, &self.1)
+            (EMPTY_NODES_REF, EMPTY_LISTN_REF)
         }
         fn split_listeners(self) -> (Self::WithoutListeners, Self::Listeners) {
-            (BOGUS_1, empty_listeners())
+            (BogusOne, EmptyListeners)
         }
 
         fn key(&self) -> Option<u32> { None }
@@ -276,24 +248,27 @@ mod tests {
         }
     }
 
-    struct BogusTwo(EmptyNodes<Never>, EmptyListeners<Never>);
-    const BOGUS_2: BogusTwo = BogusTwo(EmptyNodes(PhantomData), EmptyListeners(PhantomData));
-    impl DomNode for BogusTwo {
-        type Message = Never;
-        type Children = EmptyNodes<Self::Message>;
-        type Listeners = EmptyListeners<Self::Message>;
+    struct BogusTwo;
+    impl<M> DomNodes<M> for BogusTwo {
+        fn process_all<'a, P: DomNodeProcessor<'a, M>>(&'a self, acc: &mut P::Acc) -> Result<(), P::Error> {
+            P::get_processor()(acc, self)
+        }
+    }
+    impl<M> DomNode<M> for BogusTwo {
+        type Children = ();
+        type Listeners = EmptyListeners;
         type WithoutListeners = BogusTwo;
 
         fn key(&self) -> Option<u32> { None }
         fn get_attribute(&self, _index: usize) -> Option<&KeyValue> { None }
 
-        fn children(&self) -> &Self::Children { &self.0 }
-        fn listeners(&self) -> &Self::Listeners { &self.1 }
+        fn children(&self) -> &Self::Children { EMPTY_NODES_REF }
+        fn listeners(&self) -> &Self::Listeners { EMPTY_LISTN_REF }
         fn children_and_listeners(&self) -> (&Self::Children, &Self::Listeners) {
-            (&self.0, &self.1)
+            (EMPTY_NODES_REF, EMPTY_LISTN_REF)
         }
         fn split_listeners(self) -> (Self::WithoutListeners, Self::Listeners) {
-            (BOGUS_2, empty_listeners())
+            (BogusTwo, EmptyListeners)
         }
 
         fn value(&self) -> DomValue {
@@ -301,15 +276,13 @@ mod tests {
         }
     }
 
-    struct ChildCounter;
-    #[derive(Debug, Clone, Copy)]
-    enum Never {}
-    impl<'a, M> DomNodeProcessor<'a, M> for ChildCounter {
+    struct ChildCounter<M=Never>(PhantomData<M>);
+    impl<'a, M> DomNodeProcessor<'a, M> for ChildCounter<M> {
         type Acc = usize;
         type Error = Never;
 
-        fn get_processor<T: DomNode>() -> fn(&mut Self::Acc, &'a T) -> Result<(), Never> {
-            fn incr<'a, T: DomNode>(count: &mut usize, _node: &'a T) -> Result<(), Never> {
+        fn get_processor<T: DomNode<M>>() -> fn(&mut Self::Acc, &'a T) -> Result<(), Never> {
+            fn incr<'a, M, T: DomNode<M>>(count: &mut usize, _node: &'a T) -> Result<(), Never> {
                 *count += 1;
                 Ok(())
             }
@@ -317,34 +290,37 @@ mod tests {
         }
     }
 
-    fn html_sample() -> impl DomNode<Message = Never> + 'static {
+    #[derive(Copy, Clone, Debug, Hash, PartialOrd, PartialEq)]
+    enum Never {}
+
+    fn html_sample() -> impl DomNode<Never> + 'static {
         div ((
             attributes([("attr", Str("value"))]),
             (
-            BOGUS_1,
-            BOGUS_1,
-            BOGUS_2,
+            BogusOne,
+            BogusOne,
+            BogusTwo,
             table ((
-                "something&".into_node(),
-                th (empty()),
-                tr (empty()),
-                tr (empty()),
+                "something&",
+                th (()),
+                tr (()),
+                tr (()),
             )),
             )
         ))
     }
 
     #[cfg(feature = "use_either_n")]
-    fn html_either(include_rows: bool) -> impl DomNode<Message = Never> + 'static {
+    fn html_either(include_rows: bool) -> impl DomNode<Never> + 'static {
         div((
             table((
                 if include_rows {
                     Either2::One((
-                        tr("a".into_node()),
-                        tr("b".into_node()),
+                        tr("a"),
+                        tr("b"),
                     ))
                 } else {
-                    Either2::Two("sumthin else".into_node())
+                    Either2::Two("sumthin else")
                 }
             ))
         ))
@@ -381,9 +357,9 @@ mod tests {
 
     #[test]
     fn nonstatic_nodes() {
-        fn str_div<'a>(str_val: &'a str) -> impl DomNode<Message = Never> + 'a {
+        fn str_div<'a>(str_val: &'a str) -> impl DomNode<Never> + 'a {
             div (
-                str_val.into_node()
+                str_val
             )
         }
 
@@ -395,23 +371,23 @@ mod tests {
     #[test]
     fn counts_children() {
         let mut count = 0;
-        (BOGUS_1, BOGUS_1, BOGUS_2).process_all::<ChildCounter>(&mut count).unwrap();
+        (BogusOne, BogusOne, BogusTwo).process_all::<ChildCounter>(&mut count).unwrap();
         assert_eq!(3, count);
 
         count = 0;
-        (BOGUS_1, (BOGUS_1,), BOGUS_2).process_all::<ChildCounter>(&mut count).unwrap();
+        (BogusOne, (BogusOne,), BogusTwo).process_all::<ChildCounter>(&mut count).unwrap();
         assert_eq!(3, count);
 
         count = 0;
-        [BOGUS_1, BOGUS_1, BOGUS_1].process_all::<ChildCounter>(&mut count).unwrap();
+        [BogusOne, BogusOne, BogusOne].process_all::<ChildCounter>(&mut count).unwrap();
         assert_eq!(3, count);
 
         count = 0;
-        (BOGUS_1, BOGUS_1,
-            [BOGUS_1, BOGUS_1, BOGUS_1],
-            [(BOGUS_1)],
-            vec![empty(), empty(), empty()],
-            [BOGUS_2, BOGUS_2, BOGUS_2],
+        (BogusOne, BogusOne,
+            [BogusOne, BogusOne, BogusOne],
+            [(BogusOne)],
+            vec![(), (), ()],
+            [BogusTwo, BogusTwo, BogusTwo],
         ).process_all::<ChildCounter>(&mut count).unwrap();
         assert_eq!(9, count);
 
@@ -451,7 +427,7 @@ mod tests {
         );
     }
 
-    fn check_attribute_list<T: DomNode>(div: T) {
+    fn check_attribute_list<M, T: DomNode<M>>(div: T) {
         assert_eq!(div.get_attribute(0), Some(&("attr1", Str("val1"))));
         assert_eq!(div.get_attribute(1), Some(&("attr2", Str("val2"))));
         assert_eq!(div.get_attribute(2), Some(&("attr3", Str("val3"))));
@@ -466,14 +442,14 @@ mod tests {
 
     #[test]
     fn builds_attribute_list() {
-        let div1 = div(empty::<Never>())
+        let div1 = div(PhantomData::<Never>)
             .with_attributes([("attr2", Str("val2")), ("attr3", Str("val3"))])
             .with_attributes([("attr1", Str("val1"))]);
         check_attribute_list(div1);
 
         let div2 = div((
             attributes([("attr2", Str("val2")), ("attr3", Str("val3"))]),
-            div(empty::<Never>())
+            div(PhantomData::<Never>)
         )).with_attributes([("attr1", Str("val1"))]);
         check_attribute_list(div2);
     }

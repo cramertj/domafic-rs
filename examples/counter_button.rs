@@ -1,5 +1,4 @@
 extern crate domafic;
-use domafic::IntoNode;
 use domafic::tags::{button, div, h1};
 use domafic::listener::on;
 
@@ -27,15 +26,15 @@ fn main() {
 
     let render = |state: &State| {
         div ((
-            h1("Hello from rust!".into_node()),
+            h1("Hello from rust!"),
             button ((
                 on("click", |_| Msg::Decrement),
-                "-".into_node(),
+                "-",
             )),
-            state.to_string().into_node(),
+            state.to_string(),
             button ((
                 on("click", |_| Msg::Increment),
-                "+".into_node(),
+                "+",
             )),
         ))
     };

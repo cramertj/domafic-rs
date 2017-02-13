@@ -7,7 +7,7 @@ fn main() {
 
 #[cfg(target_os = "emscripten")]
 fn main() {
-    use domafic::{DomNode, KeyIter, IntoNode};
+    use domafic::{DomNode, KeyIter};
     use domafic::AttributeValue::*;
     use domafic::tags::*;
     use domafic::listener::on;
@@ -77,17 +77,17 @@ fn main() {
 
     let render_item = |state: &str| {
         div ((
-            state.to_owned().into_node(),
+            state.to_owned(),
             button ((
                 on("click", |_| Msg::Remove),
-                "Remove".into_node(),
+                "Remove",
             )),
         ))
     };
 
     let render = |state: &TodoState| {
         div ((
-            h1("TODO:".into_node()),
+            h1("TODO:"),
             render_todo_input_field(&state.entry_box),
             state.todos
                 .iter().enumerate()
