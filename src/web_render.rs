@@ -55,7 +55,7 @@ mod private {
 
     use std::ffi::{CString, CStr};
     use std::marker::PhantomData;
-    use std::{mem, str};
+    use std::{mem, ptr, str};
 
     pub fn run<D, U, R, S>(element_selector: &str, updater: U, renderer: R, initial_state: S) -> !
         where
@@ -353,7 +353,8 @@ mod private {
         updater.update(state, message, keys.into_iter());
 
         // Render new DomNode
-        *rendered = renderer.render(state);
+        ptr::drop_in_place(rendered);
+        ptr::write(rendered, renderer.render(state));
 
         // Write new DomNode to root element
         {
