@@ -1,6 +1,6 @@
 [package]
 name = "domafic"
-version = "0.1.2"
+version = "0.2.0"
 authors = ["Taylor Cramer <cramertj@cs.washington.edu>"]
 
 license = "MIT/Apache-2.0"
