@@ -427,6 +427,24 @@ mod tests {
         );
     }
 
+    #[test]
+    fn escapes_text() {
+        fn local_div(text_value: &'static str) -> impl DomNode<Never> + 'static {
+            div ((
+                text_value,
+            ))
+        }
+
+        assert_eq!(
+            r#"<div>embedded &#34;quotes&#34;</div>"#.to_string(),
+            local_div(r#"embedded "quotes""#).displayable().to_string()
+        );
+        assert_eq!(
+            r#"<div>embedded &lt;tag&gt;</div>"#.to_string(),
+            local_div(r#"embedded <tag>"#).displayable().to_string()
+        );
+    }
+
     fn check_attribute_list<M, T: DomNode<M>>(div: T) {
         assert_eq!(div.get_attribute(0), Some(&("attr1", Str("val1"))));
         assert_eq!(div.get_attribute(1), Some(&("attr2", Str("val2"))));
