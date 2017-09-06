@@ -428,6 +428,25 @@ mod tests {
     }
 
     #[test]
+    fn escapes_attributes() {
+        fn local_div(attr_value: &'static str) -> impl DomNode<Never> + 'static {
+            div ((
+                attributes([("attr", Str(attr_value))]),
+                (),
+            ))
+        }
+
+        assert_eq!(
+            r#"<div attr="embedded &#34;quotes&#34;"></div>"#.to_string(),
+            local_div(r#"embedded "quotes""#).displayable().to_string()
+        );
+        assert_eq!(
+            r#"<div attr="embedded &lt;tag&gt;"></div>"#.to_string(),
+            local_div(r#"embedded <tag>"#).displayable().to_string()
+        );
+    }
+
+    #[test]
     fn escapes_text() {
         fn local_div(text_value: &'static str) -> impl DomNode<Never> + 'static {
             div ((

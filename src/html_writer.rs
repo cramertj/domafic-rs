@@ -26,7 +26,11 @@ impl<'a, M, W: io::Write> DomNodeProcessor<'a, M> for HtmlWriter<W> {
                 DomValue::Element { tag: tagname } => {
                     write!(w, "<{}", tagname)?;
                     for attr in node.attributes() {
-                        write!(w, " {}=\"{}\"", attr.0, attr.1)?;
+                        write!(w, " {}=\"", attr.0)?;
+                        for escaped_u8 in Escape::new(attr.1.as_str().bytes()) {
+                            w.write(&[escaped_u8])?;
+                        }
+                        write!(w, "\"")?;
                     }
                     write!(w, ">")?;
                     node.children().process_all::<HtmlWriter<W>>(w)?;
